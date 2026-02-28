@@ -1,0 +1,13 @@
+<h2>Save These Unseal Keys</h2>
+
+<p>You need 3 of these 5 keys to unseal.</p>
+
+<ul>
+{% for share in shares %}
+    <li>{{ share }}</li>
+{% endfor %}
+</ul>
+
+<p><b>Save them securely. They will not be shown again.</b></p>
+
+<a href="/unseal/">Go to Unseal</a>

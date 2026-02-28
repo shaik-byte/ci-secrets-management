@@ -1,0 +1,226 @@
+<!-- <button onclick="registerDevice()">Register Device</button>
+
+<script>
+async function registerDevice() {
+
+    const resp = await fetch("/begin-registration/", {
+        credentials: "include"
+    });
+
+    const options = await resp.json();
+
+    // ✅ FIXED: base64url → Uint8Array
+    function base64UrlToUint8Array(base64Url) {
+        let base64 = base64Url
+            .replace(/-/g, '+')
+            .replace(/_/g, '/');
+
+        const padding = '='.repeat((4 - base64.length % 4) % 4);
+        base64 += padding;
+
+        return Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+    }
+
+    options.challenge = base64UrlToUint8Array(options.challenge);
+    options.user.id = base64UrlToUint8Array(options.user.id);
+
+    const credential = await navigator.credentials.create({
+        publicKey: options
+    });
+
+    function toBase64(buffer) {
+        return btoa(String.fromCharCode(...new Uint8Array(buffer)));
+    }
+
+    const registrationData = {
+        id: credential.id,
+        rawId: toBase64(credential.rawId),
+        type: credential.type,
+        response: {
+            attestationObject: toBase64(credential.response.attestationObject),
+            clientDataJSON: toBase64(credential.response.clientDataJSON),
+        }
+    };
+
+    const finishResp = await fetch("/finish-registration/", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify(registrationData)
+    });
+
+    const result = await finishResp.json();
+
+    if (result.status === "registered") {
+        alert("Device Registered Successfully");
+        window.location.href = "/unseal/";
+    } else {
+        alert("Registration Failed: " + result.error);
+    }
+}
+</script> -->
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Initialize Vault</title>
+
+    <!-- Bootstrap -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <style>
+        body {
+            background: linear-gradient(135deg, #0f172a, #1e293b);
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Segoe UI', sans-serif;
+        }
+
+        .init-card {
+            width: 100%;
+            max-width: 450px;
+            border-radius: 16px;
+            padding: 40px;
+            background: #ffffff;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.25);
+            text-align: center;
+        }
+
+        .vault-icon {
+            font-size: 44px;
+            margin-bottom: 12px;
+        }
+
+        .btn-init {
+            border-radius: 8px;
+            padding: 10px;
+            font-weight: 600;
+        }
+
+        .status-message {
+            margin-top: 15px;
+            font-size: 14px;
+        }
+
+        .footer-text {
+            font-size: 13px;
+            margin-top: 20px;
+            color: #6c757d;
+        }
+    </style>
+</head>
+<body>
+
+<div class="init-card">
+
+    <div class="vault-icon">🔑</div>
+    <h3 class="mb-3">Initialize Secure Vault</h3>
+    <p class="text-muted mb-4">
+        Register your device passkey to secure the vault.
+    </p>
+
+    <button id="registerBtn"
+            onclick="registerDevice()"
+            class="btn btn-primary w-100 btn-init">
+        🔑 Register Device
+    </button>
+
+    <div id="status" class="status-message"></div>
+
+    <div class="footer-text">
+        Secured with WebAuthn Registration
+    </div>
+
+</div>
+
+
+<script>
+async function registerDevice() {
+
+    const statusDiv = document.getElementById("status");
+    const btn = document.getElementById("registerBtn");
+
+    try {
+
+        btn.disabled = true;
+        btn.innerText = "Registering...";
+        statusDiv.innerHTML = '<div class="text-muted">Waiting for passkey confirmation...</div>';
+
+        const resp = await fetch("/begin-registration/", {
+            credentials: "include"
+        });
+
+        const options = await resp.json();
+
+        function base64UrlToUint8Array(base64Url) {
+            let base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+            const padding = '='.repeat((4 - base64.length % 4) % 4);
+            base64 += padding;
+            return Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+        }
+
+        options.challenge = base64UrlToUint8Array(options.challenge);
+        options.user.id = base64UrlToUint8Array(options.user.id);
+
+        const credential = await navigator.credentials.create({
+            publicKey: options
+        });
+
+        function toBase64(buffer) {
+            return btoa(String.fromCharCode(...new Uint8Array(buffer)));
+        }
+
+        const registrationData = {
+            id: credential.id,
+            rawId: toBase64(credential.rawId),
+            type: credential.type,
+            response: {
+                attestationObject: toBase64(credential.response.attestationObject),
+                clientDataJSON: toBase64(credential.response.clientDataJSON),
+            }
+        };
+
+        const finishResp = await fetch("/finish-registration/", {
+            method: "POST",
+            credentials: "include",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(registrationData)
+        });
+
+        const result = await finishResp.json();
+
+        if (result.status === "registered") {
+            statusDiv.innerHTML =
+                '<div class="text-success">Device Registered Successfully ✔ Redirecting...</div>';
+
+            setTimeout(() => {
+                window.location.href = "/unseal/";
+            }, 1000);
+
+        } else {
+            throw new Error(result.error);
+        }
+
+    } catch (error) {
+
+        btn.disabled = false;
+        btn.innerText = "🔑 Register Device";
+
+        statusDiv.innerHTML =
+            '<div class="alert alert-danger mt-3">Registration Failed: ' +
+            error.message +
+            '</div>';
+    }
+}
+</script>
+
+</body>
+</html>

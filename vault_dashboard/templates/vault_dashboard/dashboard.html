@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Secrets Manager</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <style>
+        body { background-color: #f4f6f9; }
+        .card { border-radius: 12px; }
+        .secret-value { font-family: monospace; }
+        #timer { font-weight: bold; font-size: 14px; }
+        .env-header { font-size: 1.25rem; font-weight: 700; }
+        .accordion-button:focus { box-shadow: none; }
+    </style>
+</head>
+
+<body>
+
+<div class="container mt-5">
+
+    <!-- HEADER -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>🔐 Secrets Manager</h2>
+
+        <div class="d-flex align-items-center gap-3">
+            <span id="timer" class="badge bg-warning text-dark">10:00</span>
+
+            <!-- ✅ NEW NOTIFICATIONS BUTTON -->
+            <a href="{% url 'notifications' %}" class="btn btn-outline-primary btn-sm">
+                📧 Notifications
+            </a>
+            <a href="{% url 'audit_dashboard' %}" class="btn btn-outline-dark btn-sm">
+                📜 Audit Logs
+            </a>
+
+            <a href="{% url 'logout' %}" class="btn btn-outline-danger btn-sm">
+                Logout
+            </a>
+        </div>
+    </div>
+
+    <!-- ADD ENVIRONMENT -->
+    <div class="card p-4 mb-4 shadow-sm">
+        <h5>Add Environment</h5>
+        <form method="POST" action="{% url 'add_environment' %}" class="d-flex gap-2">
+            {% csrf_token %}
+            <input type="text" name="name" class="form-control" placeholder="Environment Name" required>
+            <button type="submit" class="btn btn-primary">Add</button>
+        </form>
+    </div>
+
+    <div class="accordion" id="environmentAccordion">
+        {% for env in environments %}
+        <div class="accordion-item mb-3 shadow-sm">
+
+            <h2 class="accordion-header d-flex justify-content-between align-items-center">
+                <button class="accordion-button collapsed env-header"
+                        type="button"
+                        data-bs-toggle="collapse"
+                        data-bs-target="#collapseEnv{{ env.id }}">
+                    {{ env.name }}
+                </button>
+
+                <button class="btn btn-outline-danger btn-sm me-3"
+                        data-bs-toggle="modal"
+                        data-bs-target="#deleteEnvModal{{ env.id }}">
+                    Delete
+                </button>
+            </h2>
+
+            <!-- DELETE ENVIRONMENT MODAL -->
+            <div class="modal fade" id="deleteEnvModal{{ env.id }}" tabindex="-1">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title text-danger">Delete Environment</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            Are you sure you want to delete <strong>{{ env.name }}</strong> ?
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">No</button>
+                            <form method="POST" action="{% url 'delete_environment' env.id %}">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-danger">Yes, Delete</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="collapseEnv{{ env.id }}"
+                 class="accordion-collapse collapse"
+                 data-bs-parent="#environmentAccordion">
+
+                <div class="accordion-body">
+
+                    <!-- ADD FOLDER -->
+                    <form method="POST"
+                          action="{% url 'add_folder' env.id %}"
+                          class="d-flex gap-2 mb-3">
+                        {% csrf_token %}
+                        <input type="text" name="name" class="form-control" placeholder="Folder Name" required>
+                        <button type="submit" class="btn btn-secondary btn-sm">Add Folder</button>
+                    </form>
+
+                    <div class="accordion" id="folderAccordion{{ env.id }}">
+                        {% for folder in env.folders.all %}
+                        <div class="accordion-item mb-2">
+
+                            <h2 class="accordion-header d-flex justify-content-between align-items-center">
+                                <button class="accordion-button collapsed"
+                                        type="button"
+                                        data-bs-toggle="collapse"
+                                        data-bs-target="#collapseFolder{{ folder.id }}">
+                                    📁 {{ folder.name }}
+                                </button>
+
+                                <button class="btn btn-outline-danger btn-sm me-3"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#deleteFolderModal{{ folder.id }}">
+                                    Delete
+                                </button>
+                            </h2>
+
+                            <!-- DELETE FOLDER MODAL -->
+                            <div class="modal fade" id="deleteFolderModal{{ folder.id }}" tabindex="-1">
+                                <div class="modal-dialog modal-dialog-centered">
+                                    <div class="modal-content">
+                                        <div class="modal-header">
+                                            <h5 class="modal-title text-danger">Delete Folder</h5>
+                                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                        </div>
+                                        <div class="modal-body">
+                                            Are you sure you want to delete <strong>{{ folder.name }}</strong> ?
+                                        </div>
+                                        <div class="modal-footer">
+                                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">No</button>
+                                            <form method="POST" action="{% url 'delete_folder' folder.id %}">
+                                                {% csrf_token %}
+                                                <button type="submit" class="btn btn-danger">Yes, Delete</button>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div id="collapseFolder{{ folder.id }}"
+                                 class="accordion-collapse collapse"
+                                 data-bs-parent="#folderAccordion{{ env.id }}">
+
+                                <div class="accordion-body">
+
+                                    <!-- ADD SECRET -->
+                                    <form method="POST"
+                                          action="{% url 'add_secret' folder.id %}"
+                                          class="row g-2 mb-3">
+                                        {% csrf_token %}
+                                        <div class="col-md-3">
+                                            <input type="text" name="name" class="form-control" placeholder="Secret Name" required>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <input type="text" name="value" class="form-control" placeholder="Secret Value" required>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <input type="date" name="expire" class="form-control">
+                                        </div>
+                                        <div class="col-md-2">
+                                            <button type="submit" class="btn btn-success w-100">Add Secret</button>
+                                        </div>
+                                    </form>
+
+                                    <!-- SECRET TABLE -->
+                                    <table class="table table-sm table-striped align-middle">
+                                        <thead class="table-dark">
+                                            <tr>
+                                                <th>Name</th>
+                                                <th>Secret</th>
+                                                <th>Expire Date</th>
+                                                <th width="200">Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                        {% for secret in folder.secrets.all %}
+                                            <tr>
+                                                <td>{{ secret.name }}</td>
+                                                <td>
+                                                    <span id="secret-{{ secret.id }}" class="secret-value">******</span>
+                                                </td>
+                                                <td>{{ secret.expire_date }}</td>
+                                                <td class="d-flex gap-2">
+                                                    <button class="btn btn-outline-primary btn-sm"
+                                                            onclick="toggleSecret({{ secret.id }})">
+                                                        Show
+                                                    </button>
+                                                    <button class="btn btn-outline-danger btn-sm"
+                                                            data-bs-toggle="modal"
+                                                            data-bs-target="#deleteSecretModal{{ secret.id }}">
+                                                        Delete
+                                                    </button>
+                                                </td>
+                                            </tr>
+
+                                            <!-- DELETE SECRET MODAL -->
+                                            <div class="modal fade" id="deleteSecretModal{{ secret.id }}" tabindex="-1">
+                                                <div class="modal-dialog modal-dialog-centered">
+                                                    <div class="modal-content">
+                                                        <div class="modal-header">
+                                                            <h5 class="modal-title text-danger">Delete Secret</h5>
+                                                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                                        </div>
+                                                        <div class="modal-body">
+                                                            Are you sure you want to delete <strong>{{ secret.name }}</strong> ?
+                                                        </div>
+                                                        <div class="modal-footer">
+                                                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">No</button>
+                                                            <form method="POST" action="{% url 'delete_secret' secret.id %}">
+                                                                {% csrf_token %}
+                                                                <button type="submit" class="btn btn-danger">Yes, Delete</button>
+                                                            </form>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                        {% empty %}
+                                            <tr>
+                                                <td colspan="4" class="text-muted text-center">
+                                                    No secrets yet
+                                                </td>
+                                            </tr>
+                                        {% endfor %}
+                                        </tbody>
+                                    </table>
+
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+function toggleSecret(id) {
+    const element = document.getElementById(`secret-${id}`);
+    if (element.innerText === "******") {
+        fetch(`/secrets/reveal-secret/${id}/`)
+            .then(res => res.json())
+            .then(data => { element.innerText = data.secret; });
+    } else {
+        element.innerText = "******";
+    }
+}
+
+/* ===== LOGIN-BASED TIMER ===== */
+
+const TIMEOUT_MINUTES = 10;
+const TIMEOUT_MS = TIMEOUT_MINUTES * 60 * 1000;
+const SESSION_KEY = "vault_login_expiry";
+
+function startTimer() {
+
+    let expiry = sessionStorage.getItem(SESSION_KEY);
+
+    if (!expiry) {
+        expiry = Date.now() + TIMEOUT_MS;
+        sessionStorage.setItem(SESSION_KEY, expiry);
+    }
+
+    function update() {
+        const now = Date.now();
+        const remaining = expiry - now;
+
+        if (remaining <= 0) {
+            sessionStorage.removeItem(SESSION_KEY);
+            fetch("{% url 'seal' %}")
+                .then(() => {
+                    window.location.href = "{% url 'login' %}";
+                });
+            return;
+        }
+
+        const minutes = Math.floor(remaining / 60000);
+        const seconds = Math.floor((remaining % 60000) / 1000);
+
+        document.getElementById("timer").innerText =
+            minutes + ":" + (seconds < 10 ? "0" : "") + seconds;
+    }
+
+    setInterval(update, 1000);
+    update();
+}
+
+startTimer();
+</script>
+
+</body>
+</html>

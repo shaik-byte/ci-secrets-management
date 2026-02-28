@@ -1,0 +1,35 @@
+from django.db import models
+
+# Create your models here.
+from django.db import models
+from django.contrib.auth.models import User
+
+
+class Environment(models.Model):
+    name = models.CharField(max_length=255)
+    created_by = models.ForeignKey(User, on_delete=models.CASCADE)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name
+
+
+class Folder(models.Model):
+    name = models.CharField(max_length=255)
+    environment = models.ForeignKey(Environment, on_delete=models.CASCADE, related_name="folders")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.environment.name} / {self.name}"
+
+
+class Secret(models.Model):
+    name = models.CharField(max_length=255)
+    encrypted_value = models.BinaryField()
+    notified = models.BooleanField(default=False)
+    expire_date = models.DateField(null=True, blank=True)
+    folder = models.ForeignKey(Folder, on_delete=models.CASCADE, related_name="secrets")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name
