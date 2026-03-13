@@ -190,11 +190,25 @@
                                                     <span id="secret-{{ secret.id }}" class="secret-value">******</span>
                                                 </td>
                                                 <td>{{ secret.expire_date }}</td>
-                                                <td class="d-flex gap-2">
+                                                <td class="d-flex gap-2 flex-wrap">
+                                                    {% if secret.is_access_enabled or request.user.is_superuser %}
                                                     <button class="btn btn-outline-primary btn-sm"
                                                             onclick="toggleSecret({{ secret.id }})">
                                                         Show
                                                     </button>
+                                                    {% else %}
+                                                    <span class="badge bg-secondary">Admin Locked</span>
+                                                    {% endif %}
+
+                                                    {% if request.user.is_superuser %}
+                                                    <form method="POST" action="{% url 'toggle_secret_access' secret.id %}">
+                                                        {% csrf_token %}
+                                                        <button type="submit" class="btn btn-outline-warning btn-sm">
+                                                            {% if secret.is_access_enabled %}Disable Access{% else %}Enable Access{% endif %}
+                                                        </button>
+                                                    </form>
+                                                    {% endif %}
+
                                                     <button class="btn btn-outline-danger btn-sm"
                                                             data-bs-toggle="modal"
                                                             data-bs-target="#deleteSecretModal{{ secret.id }}">
@@ -255,8 +269,14 @@ function toggleSecret(id) {
     const element = document.getElementById(`secret-${id}`);
     if (element.innerText === "******") {
         fetch(`/secrets/reveal-secret/${id}/`)
-            .then(res => res.json())
-            .then(data => { element.innerText = data.secret; });
+            .then(async res => {
+                const data = await res.json();
+                if (!res.ok) {
+                    alert(data.error || "Unable to reveal secret");
+                    return;
+                }
+                element.innerText = data.secret;
+            });
     } else {
         element.innerText = "******";
     }

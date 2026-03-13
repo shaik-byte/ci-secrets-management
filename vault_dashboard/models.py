@@ -27,6 +27,7 @@ class Secret(models.Model):
     name = models.CharField(max_length=255)
     encrypted_value = models.BinaryField()
     notified = models.BooleanField(default=False)
+    is_access_enabled = models.BooleanField(default=False)
     expire_date = models.DateField(null=True, blank=True)
     folder = models.ForeignKey(Folder, on_delete=models.CASCADE, related_name="secrets")
     created_at = models.DateTimeField(auto_now_add=True)

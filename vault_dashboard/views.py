@@ -5,7 +5,7 @@
 # from django.contrib.auth.decorators import login_required
 # from .models import Environment, Folder, Secret
 # from .utils import encrypt_value, decrypt_value
-# from django.http import JsonResponse
+# from django.http import JsonResponse, HttpResponseForbidden
 # from datetime import datetime
 
 
@@ -133,7 +133,7 @@
 
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponseForbidden
 from datetime import datetime
 
 from .models import Environment, Folder, Secret
@@ -238,6 +238,9 @@ def add_secret(request, folder_id):
 def reveal_secret(request, secret_id):
     secret = get_object_or_404(Secret, id=secret_id)
 
+    if not secret.is_access_enabled and not request.user.is_superuser:
+        return JsonResponse({"error": "Secret access is locked by admin."}, status=403)
+
     decrypted = decrypt_value(request, secret.encrypted_value)
 
     AuditLog.objects.create(
@@ -249,6 +252,31 @@ def reveal_secret(request, secret_id):
     )
 
     return JsonResponse({"secret": decrypted})
+
+
+@login_required
+def toggle_secret_access(request, secret_id):
+    if request.method != "POST":
+        return HttpResponseForbidden("Invalid request method")
+
+    if not request.user.is_superuser:
+        return HttpResponseForbidden("Only admin can change secret access")
+
+    secret = get_object_or_404(Secret, id=secret_id)
+    secret.is_access_enabled = not secret.is_access_enabled
+    secret.save(update_fields=["is_access_enabled"])
+
+    state = "enabled" if secret.is_access_enabled else "disabled"
+
+    AuditLog.objects.create(
+        user=request.user,
+        action='UPDATE',
+        entity='Secret',
+        details=f"Admin {state} reveal access for secret '{secret.name}'",
+        ip_address=get_client_ip(request)
+    )
+
+    return redirect("vault_dashboard")
 
 
 # =========================
