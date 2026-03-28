@@ -60,14 +60,6 @@ class WebAuthnDevice(models.Model):
     user_agent = models.TextField(blank=True, default="")
     added_at = models.DateTimeField(auto_now_add=True)
 
-    class Meta:
-        constraints = [
-            models.UniqueConstraint(
-                fields=["vault", "device_fingerprint"],
-                name="unique_webauthn_device_per_vault_fingerprint",
-            )
-        ]
-
     def __str__(self):
         return self.device_label or f"WebAuthnDevice<{self.id}>"
 

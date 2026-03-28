@@ -228,46 +228,23 @@ def finish_registration(request):
         device_label = (data.get("deviceLabel") or "").strip()[:120]
         user_agent = request.META.get("HTTP_USER_AGENT", "")
 
-        existing_by_fingerprint = vault.webauthn_devices.filter(
-            device_fingerprint=device_fingerprint
-        ).first()
         existing_by_credential = vault.webauthn_devices.filter(
             credential_id=verification.credential_id
         ).first()
+        has_same_device_before = vault.webauthn_devices.filter(
+            device_fingerprint=device_fingerprint
+        ).exists()
 
-        re_registered = False
+        re_registered = bool(existing_by_credential or has_same_device_before)
 
-        if existing_by_fingerprint:
-            device = existing_by_fingerprint
-            re_registered = True
-
-            if existing_by_credential and existing_by_credential.id != device.id:
-                existing_by_credential.delete()
-
-            device.credential_id = verification.credential_id
-            device.public_key = verification.credential_public_key
-            device.sign_count = verification.sign_count
+        if existing_by_credential:
+            existing_by_credential.public_key = verification.credential_public_key
+            existing_by_credential.sign_count = verification.sign_count
+            existing_by_credential.device_fingerprint = device_fingerprint
             if device_label:
-                device.device_label = device_label
-            device.user_agent = user_agent
-            device.save(
-                update_fields=[
-                    "credential_id",
-                    "public_key",
-                    "sign_count",
-                    "device_label",
-                    "user_agent",
-                ]
-            )
-        elif existing_by_credential:
-            device = existing_by_credential
-            device.public_key = verification.credential_public_key
-            device.sign_count = verification.sign_count
-            device.device_fingerprint = device_fingerprint
-            if device_label:
-                device.device_label = device_label
-            device.user_agent = user_agent
-            device.save(
+                existing_by_credential.device_label = device_label
+            existing_by_credential.user_agent = user_agent
+            existing_by_credential.save(
                 update_fields=[
                     "public_key",
                     "sign_count",
