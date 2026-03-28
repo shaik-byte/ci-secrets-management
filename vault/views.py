@@ -225,41 +225,74 @@ def finish_registration(request):
         )
 
         device_fingerprint = get_device_fingerprint(request)
-        if vault.webauthn_devices.filter(device_fingerprint=device_fingerprint).exists():
-            return JsonResponse(
-                {
-                    "error": "This browser/device is already registered. Please register using a different mobile device.",
-                },
-                status=400,
-            )
-
         device_label = (data.get("deviceLabel") or "").strip()[:120]
+        user_agent = request.META.get("HTTP_USER_AGENT", "")
 
-        device, created = WebAuthnDevice.objects.get_or_create(
-            vault=vault,
-            credential_id=verification.credential_id,
-            defaults={
-                "public_key": verification.credential_public_key,
-                "sign_count": verification.sign_count,
-                "device_label": device_label,
-                "device_fingerprint": device_fingerprint,
-                "user_agent": request.META.get("HTTP_USER_AGENT", ""),
-            },
-        )
+        existing_by_fingerprint = vault.webauthn_devices.filter(
+            device_fingerprint=device_fingerprint
+        ).first()
+        existing_by_credential = vault.webauthn_devices.filter(
+            credential_id=verification.credential_id
+        ).first()
 
-        if not created:
+        re_registered = False
+
+        if existing_by_fingerprint:
+            device = existing_by_fingerprint
+            re_registered = True
+
+            if existing_by_credential and existing_by_credential.id != device.id:
+                existing_by_credential.delete()
+
+            device.credential_id = verification.credential_id
             device.public_key = verification.credential_public_key
             device.sign_count = verification.sign_count
             if device_label:
                 device.device_label = device_label
-            device.user_agent = request.META.get("HTTP_USER_AGENT", "")
-            device.save(update_fields=["public_key", "sign_count", "device_label", "user_agent"])
+            device.user_agent = user_agent
+            device.save(
+                update_fields=[
+                    "credential_id",
+                    "public_key",
+                    "sign_count",
+                    "device_label",
+                    "user_agent",
+                ]
+            )
+        elif existing_by_credential:
+            device = existing_by_credential
+            device.public_key = verification.credential_public_key
+            device.sign_count = verification.sign_count
+            device.device_fingerprint = device_fingerprint
+            if device_label:
+                device.device_label = device_label
+            device.user_agent = user_agent
+            device.save(
+                update_fields=[
+                    "public_key",
+                    "sign_count",
+                    "device_fingerprint",
+                    "device_label",
+                    "user_agent",
+                ]
+            )
+        else:
+            WebAuthnDevice.objects.create(
+                vault=vault,
+                credential_id=verification.credential_id,
+                public_key=verification.credential_public_key,
+                sign_count=verification.sign_count,
+                device_label=device_label,
+                device_fingerprint=device_fingerprint,
+                user_agent=user_agent,
+            )
 
         registered_count = vault.webauthn_devices.count()
 
         return JsonResponse(
             {
                 "status": "registered",
+                "re_registered": re_registered,
                 "registered_devices": registered_count,
                 "required_devices": REQUIRED_WEBAUTHN_DEVICES,
                 "ready_for_unseal": registered_count >= REQUIRED_WEBAUTHN_DEVICES,

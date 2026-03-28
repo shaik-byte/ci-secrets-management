@@ -213,14 +213,14 @@ async function registerDevice() {
         if (result.status === "registered") {
             if (result.ready_for_unseal) {
                 statusDiv.innerHTML =
-                    `<div class="text-success">Device Registered (${result.registered_devices}/${result.required_devices}) ✔ Redirecting to unseal...</div>`;
+                    `<div class="text-success">${result.re_registered ? "Device Re-Registered" : "Device Registered"} (${result.registered_devices}/${result.required_devices}) ✔ Redirecting to unseal...</div>`;
 
                 setTimeout(() => {
                     window.location.href = "/unseal/";
                 }, 1000);
             } else {
                 statusDiv.innerHTML =
-                    `<div class="text-warning">Device Registered (${result.registered_devices}/${result.required_devices}). Please register another mobile device.</div>`;
+                    `<div class="text-warning">${result.re_registered ? "Device Re-Registered" : "Device Registered"} (${result.registered_devices}/${result.required_devices}). Please register another mobile device.</div>`;
 
                 setTimeout(() => {
                     window.location.reload();
