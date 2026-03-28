@@ -8,6 +8,8 @@ from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
 from django.shortcuts import redirect, render
 from django.views.decorators.csrf import csrf_exempt
+from django.db import connections
+from django.core.cache import cache
 from webauthn import (
     generate_authentication_options,
     generate_registration_options,
@@ -138,6 +140,10 @@ def seal_vault(request):
         vault.is_sealed = True
         vault.save(update_fields=["is_sealed"])
 
+    cache.set("vault_hard_sealed", True, None)
+    request.session["vault_hard_sealed"] = True
+
+    connections.close_all()
     logout(request)
     return render(request, "sealed.html")
 
@@ -384,6 +390,9 @@ def finish_authentication(request):
 
         vault.is_sealed = False
         vault.save(update_fields=["is_sealed"])
+
+        cache.set("vault_hard_sealed", False, None)
+        request.session["vault_hard_sealed"] = False
 
         if "auth_challenge" in request.session:
             del request.session["auth_challenge"]
