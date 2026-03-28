@@ -1,6 +1,7 @@
 import base64
 import json
 import os
+import hashlib
 
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
@@ -21,6 +22,15 @@ from .security import get_client_ip, get_location_from_ip
 RP_ID = "localhost"
 ORIGIN = "http://localhost:8000"
 REQUIRED_WEBAUTHN_DEVICES = 2
+
+
+def get_device_fingerprint(request):
+    user_agent = request.META.get("HTTP_USER_AGENT", "")
+    accept_lang = request.META.get("HTTP_ACCEPT_LANGUAGE", "")
+    sec_platform = request.META.get("HTTP_SEC_CH_UA_PLATFORM", "")
+
+    raw = f"{user_agent}|{accept_lang}|{sec_platform}".encode()
+    return hashlib.sha256(raw).hexdigest()
 
 
 def home(request):
@@ -179,6 +189,12 @@ def begin_registration(request):
             ],
             "timeout": options.timeout,
             "attestation": options.attestation,
+            "authenticatorSelection": {
+                "authenticatorAttachment": "cross-platform",
+                "residentKey": "preferred",
+                "requireResidentKey": False,
+                "userVerification": "preferred",
+            },
             "requiredDevices": REQUIRED_WEBAUTHN_DEVICES,
             "registeredDevices": vault.webauthn_devices.count(),
         }
@@ -208,19 +224,36 @@ def finish_registration(request):
             expected_origin=ORIGIN,
         )
 
+        device_fingerprint = get_device_fingerprint(request)
+        if vault.webauthn_devices.filter(device_fingerprint=device_fingerprint).exists():
+            return JsonResponse(
+                {
+                    "error": "This browser/device is already registered. Please register using a different mobile device.",
+                },
+                status=400,
+            )
+
+        device_label = (data.get("deviceLabel") or "").strip()[:120]
+
         device, created = WebAuthnDevice.objects.get_or_create(
             vault=vault,
             credential_id=verification.credential_id,
             defaults={
                 "public_key": verification.credential_public_key,
                 "sign_count": verification.sign_count,
+                "device_label": device_label,
+                "device_fingerprint": device_fingerprint,
+                "user_agent": request.META.get("HTTP_USER_AGENT", ""),
             },
         )
 
         if not created:
             device.public_key = verification.credential_public_key
             device.sign_count = verification.sign_count
-            device.save(update_fields=["public_key", "sign_count"])
+            if device_label:
+                device.device_label = device_label
+            device.user_agent = request.META.get("HTTP_USER_AGENT", "")
+            device.save(update_fields=["public_key", "sign_count", "device_label", "user_agent"])
 
         registered_count = vault.webauthn_devices.count()
 
@@ -230,6 +263,10 @@ def finish_registration(request):
                 "registered_devices": registered_count,
                 "required_devices": REQUIRED_WEBAUTHN_DEVICES,
                 "ready_for_unseal": registered_count >= REQUIRED_WEBAUTHN_DEVICES,
+                "registered_labels": [
+                    d.device_label or f"Device {idx + 1}"
+                    for idx, d in enumerate(vault.webauthn_devices.order_by("added_at"))
+                ],
             }
         )
 

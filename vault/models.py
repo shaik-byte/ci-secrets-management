@@ -55,8 +55,19 @@ class WebAuthnDevice(models.Model):
     credential_id = models.BinaryField(unique=True)
     public_key = models.BinaryField()
     sign_count = models.IntegerField(default=0)
+    device_label = models.CharField(max_length=120, blank=True, default="")
+    device_fingerprint = models.CharField(max_length=64)
+    user_agent = models.TextField(blank=True, default="")
     added_at = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["vault", "device_fingerprint"],
+                name="unique_webauthn_device_per_vault_fingerprint",
+            )
+        ]
+
     def __str__(self):
-        return f"WebAuthnDevice<{self.id}>"
+        return self.device_label or f"WebAuthnDevice<{self.id}>"
 

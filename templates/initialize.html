@@ -122,8 +122,14 @@ async function registerDevice() {
     <div class="vault-icon">🔑</div>
     <h3 class="mb-3">Initialize Secure Vault</h3>
     <p class="text-muted mb-4">
-        Register <strong>{{ required_device_count }}</strong> passkey devices to secure and unlock the vault.
+        Register <strong>{{ required_device_count }}</strong> passkeys from different mobile devices to secure and unlock the vault.
     </p>
+
+    <input id="deviceLabel"
+           type="text"
+           class="form-control mb-3"
+           maxlength="120"
+           placeholder="Device label (e.g., iPhone 15 - John)">
 
     <button id="registerBtn"
             onclick="registerDevice()"
@@ -133,7 +139,7 @@ async function registerDevice() {
 
     <div id="status" class="status-message">
         {% if remaining_device_count > 0 %}
-            <div class="text-muted">{{ remaining_device_count }} more device(s) required before unsealing.</div>
+            <div class="text-muted">{{ remaining_device_count }} more unique mobile device(s) required before unsealing.</div>
         {% else %}
             <div class="text-success">Required devices registered. Go to Unseal.</div>
         {% endif %}
@@ -186,6 +192,7 @@ async function registerDevice() {
             id: credential.id,
             rawId: toBase64(credential.rawId),
             type: credential.type,
+            deviceLabel: document.getElementById("deviceLabel").value || "",
             response: {
                 attestationObject: toBase64(credential.response.attestationObject),
                 clientDataJSON: toBase64(credential.response.clientDataJSON),
@@ -213,7 +220,7 @@ async function registerDevice() {
                 }, 1000);
             } else {
                 statusDiv.innerHTML =
-                    `<div class="text-warning">Device Registered (${result.registered_devices}/${result.required_devices}). Please register one more device.</div>`;
+                    `<div class="text-warning">Device Registered (${result.registered_devices}/${result.required_devices}). Please register another mobile device.</div>`;
 
                 setTimeout(() => {
                     window.location.reload();
