@@ -9,7 +9,6 @@
         body { background-color: #f4f6f9; }
         .card { border-radius: 12px; }
         .secret-value { font-family: monospace; }
-        #timer { font-weight: bold; font-size: 14px; }
         .env-header { font-size: 1.25rem; font-weight: 700; }
         .accordion-button:focus { box-shadow: none; }
     </style>
@@ -24,8 +23,6 @@
         <h2>🔐 Secrets Manager</h2>
 
         <div class="d-flex align-items-center gap-3">
-            <span id="timer" class="badge bg-warning text-dark">10:00</span>
-
             <!-- ✅ NEW NOTIFICATIONS BUTTON -->
             <a href="{% url 'notifications' %}" class="btn btn-outline-primary btn-sm">
                 📧 Notifications
@@ -36,7 +33,7 @@
 
             <form method="POST" action="{% url 'seal' %}" class="d-inline">
                 {% csrf_token %}
-                <button type="submit" class="btn btn-outline-warning btn-sm">
+                <button type="submit" class="btn btn-outline-danger btn-sm">
                     🔒 Seal Vault
                 </button>
             </form>
@@ -210,7 +207,7 @@
                                                     {% if request.user.is_superuser %}
                                                     <form method="POST" action="{% url 'toggle_secret_access' secret.id %}">
                                                         {% csrf_token %}
-                                                        <button type="submit" class="btn btn-outline-warning btn-sm">
+                                                        <button type="submit" class="btn btn-outline-danger btn-sm">
                                                             {% if secret.is_access_enabled %}Disable Access{% else %}Enable Access{% endif %}
                                                         </button>
                                                     </form>
@@ -289,46 +286,7 @@ function toggleSecret(id) {
     }
 }
 
-/* ===== LOGIN-BASED TIMER ===== */
 
-const TIMEOUT_MINUTES = 10;
-const TIMEOUT_MS = TIMEOUT_MINUTES * 60 * 1000;
-const SESSION_KEY = "vault_login_expiry";
-
-function startTimer() {
-
-    let expiry = sessionStorage.getItem(SESSION_KEY);
-
-    if (!expiry) {
-        expiry = Date.now() + TIMEOUT_MS;
-        sessionStorage.setItem(SESSION_KEY, expiry);
-    }
-
-    function update() {
-        const now = Date.now();
-        const remaining = expiry - now;
-
-        if (remaining <= 0) {
-            sessionStorage.removeItem(SESSION_KEY);
-            fetch("{% url 'seal' %}")
-                .then(() => {
-                    window.location.href = "{% url 'login' %}";
-                });
-            return;
-        }
-
-        const minutes = Math.floor(remaining / 60000);
-        const seconds = Math.floor((remaining % 60000) / 1000);
-
-        document.getElementById("timer").innerText =
-            minutes + ":" + (seconds < 10 ? "0" : "") + seconds;
-    }
-
-    setInterval(update, 1000);
-    update();
-}
-
-startTimer();
 </script>
 
 </body>
