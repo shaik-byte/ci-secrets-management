@@ -136,7 +136,7 @@ async function authenticateDevice() {
 
     <div class="vault-icon">🔐</div>
     <h3 class="mb-3">Vault is Sealed</h3>
-    <p class="text-muted mb-4">Authenticate with your registered passkey to unseal.</p>
+    <p class="text-muted mb-4">Authenticate with one of your registered passkeys to unseal. Minimum required registered devices: {{ required_device_count }} (currently {{ registered_device_count }}).</p>
 
     <button id="unsealBtn"
             onclick="authenticateDevice()"

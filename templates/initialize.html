@@ -122,16 +122,22 @@ async function registerDevice() {
     <div class="vault-icon">🔑</div>
     <h3 class="mb-3">Initialize Secure Vault</h3>
     <p class="text-muted mb-4">
-        Register your device passkey to secure the vault.
+        Register <strong>{{ required_device_count }}</strong> passkey devices to secure and unlock the vault.
     </p>
 
     <button id="registerBtn"
             onclick="registerDevice()"
             class="btn btn-primary w-100 btn-init">
-        🔑 Register Device
+        🔑 Register Device ({{ registered_device_count }}/{{ required_device_count }})
     </button>
 
-    <div id="status" class="status-message"></div>
+    <div id="status" class="status-message">
+        {% if remaining_device_count > 0 %}
+            <div class="text-muted">{{ remaining_device_count }} more device(s) required before unsealing.</div>
+        {% else %}
+            <div class="text-success">Required devices registered. Go to Unseal.</div>
+        {% endif %}
+    </div>
 
     <div class="footer-text">
         Secured with WebAuthn Registration
@@ -198,13 +204,21 @@ async function registerDevice() {
         const result = await finishResp.json();
 
         if (result.status === "registered") {
-            statusDiv.innerHTML =
-                '<div class="text-success">Device Registered Successfully ✔ Redirecting...</div>';
+            if (result.ready_for_unseal) {
+                statusDiv.innerHTML =
+                    `<div class="text-success">Device Registered (${result.registered_devices}/${result.required_devices}) ✔ Redirecting to unseal...</div>`;
 
-            setTimeout(() => {
-                window.location.href = "/unseal/";
-            }, 1000);
+                setTimeout(() => {
+                    window.location.href = "/unseal/";
+                }, 1000);
+            } else {
+                statusDiv.innerHTML =
+                    `<div class="text-warning">Device Registered (${result.registered_devices}/${result.required_devices}). Please register one more device.</div>`;
 
+                setTimeout(() => {
+                    window.location.reload();
+                }, 1200);
+            }
         } else {
             throw new Error(result.error);
         }
