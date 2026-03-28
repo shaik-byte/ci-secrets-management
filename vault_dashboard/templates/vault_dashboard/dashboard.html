@@ -108,8 +108,11 @@
 
 <div class="app-shell">
     <aside class="sidebar">
-        <div class="sidebar-title">🔐 Navigation</div>
-        <button id="nav-secrets" class="sidebar-item active" type="button" onclick="showSection('secrets')">
+        <div class="sidebar-title">📊 Dashboard</div>
+        <button id="nav-dashboard" class="sidebar-item active" type="button" onclick="showSection('dashboard')">
+            🏠 Dashboard
+        </button>
+        <button id="nav-secrets" class="sidebar-item" type="button" onclick="showSection('secrets')">
             🔐 Secrets Manager
         </button>
     </aside>
@@ -378,6 +381,7 @@ function showSection(section) {
     const sections = ["secrets"];
 
     const welcome = document.getElementById("welcome-panel");
+    const dashboardBtn = document.getElementById("nav-dashboard");
 
     sections.forEach(name => {
         const panel = document.getElementById(`section-${name}`);
@@ -387,8 +391,12 @@ function showSection(section) {
         if (navBtn) navBtn.classList.toggle("active", name === section);
     });
 
+    if (dashboardBtn) {
+        dashboardBtn.classList.toggle("active", section === "dashboard");
+    }
+
     if (welcome) {
-        welcome.style.display = section ? "none" : "block";
+        welcome.style.display = section === "dashboard" ? "block" : "none";
     }
 }
 
@@ -410,7 +418,7 @@ function toggleSecret(id) {
 }
 
 
-showSection(null);
+showSection("dashboard");
 </script>
 
 </body>
