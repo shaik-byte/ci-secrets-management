@@ -34,6 +34,13 @@
                 📜 Audit Logs
             </a>
 
+            <form method="POST" action="{% url 'seal' %}" class="d-inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-outline-warning btn-sm">
+                    🔒 Seal Vault
+                </button>
+            </form>
+
             <a href="{% url 'logout' %}" class="btn btn-outline-danger btn-sm">
                 Logout
             </a>
