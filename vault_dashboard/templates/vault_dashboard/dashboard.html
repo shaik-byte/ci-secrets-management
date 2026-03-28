@@ -115,14 +115,11 @@
     </aside>
 
     <main class="content-area">
-<div id="section-secrets" class="container mt-5">
-
-    <!-- HEADER -->
+<div class="container mt-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2>🔐 Secrets Manager</h2>
 
         <div class="d-flex align-items-center gap-3">
-            <!-- ✅ NEW NOTIFICATIONS BUTTON -->
             <a href="{% url 'notifications' %}" class="btn btn-outline-primary btn-sm">
                 📧 Notifications
             </a>
@@ -143,6 +140,13 @@
         </div>
     </div>
 
+    <div id="welcome-panel" class="card p-4 mb-4 shadow-sm text-center">
+        <h5 class="mb-2">Choose a module from the sidebar</h5>
+        <p class="text-muted mb-0">Click <strong>Secrets Manager</strong> to load all secrets on the right side.</p>
+    </div>
+</div>
+
+<div id="section-secrets" class="container mt-1" style="display:none;">
     <!-- ADD ENVIRONMENT -->
     <div class="card p-4 mb-4 shadow-sm">
         <h5>Add Environment</h5>
@@ -373,6 +377,8 @@
 function showSection(section) {
     const sections = ["secrets"];
 
+    const welcome = document.getElementById("welcome-panel");
+
     sections.forEach(name => {
         const panel = document.getElementById(`section-${name}`);
         const navBtn = document.getElementById(`nav-${name}`);
@@ -380,6 +386,10 @@ function showSection(section) {
         if (panel) panel.style.display = name === section ? "block" : "none";
         if (navBtn) navBtn.classList.toggle("active", name === section);
     });
+
+    if (welcome) {
+        welcome.style.display = section ? "none" : "block";
+    }
 }
 
 function toggleSecret(id) {
@@ -400,7 +410,7 @@ function toggleSecret(id) {
 }
 
 
-showSection("secrets");
+showSection(null);
 </script>
 
 </body>
