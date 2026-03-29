@@ -1,4 +1,4 @@
 <h2>Vault Dashboard</h2>
 
 <a href="/logout/">Logout</a>
-<a href="/seal/">Seal Vault</a>
+{% if request.user.is_superuser %}<a href="/seal/">Seal Vault</a>{% endif %}

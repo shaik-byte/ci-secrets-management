@@ -5,9 +5,10 @@ import hashlib
 
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponseForbidden
 from django.shortcuts import redirect, render
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST
 from django.db import connections
 from django.core.cache import cache
 from webauthn import (
@@ -133,7 +134,12 @@ def logout_view(request):
     return redirect("login")
 
 
+@login_required
+@require_POST
 def seal_vault(request):
+    if not request.user.is_superuser:
+        return HttpResponseForbidden("Only admin users can seal the vault.")
+
     vault = VaultConfig.objects.first()
 
     if vault:
