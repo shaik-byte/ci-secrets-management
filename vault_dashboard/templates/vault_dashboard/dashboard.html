@@ -126,6 +126,9 @@
         <h2>Secrets Manager</h2>
 
         <div class="d-flex align-items-center gap-3">
+            <span class="badge rounded-pill text-bg-light" title="Logged in user">
+                👤 {{ request.user.username }}
+            </span>
             <a href="{% url 'notifications' %}" class="btn btn-outline-primary btn-sm">
                 📧 Notifications
             </a>
