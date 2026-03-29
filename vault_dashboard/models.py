@@ -3,6 +3,7 @@ from django.db import models
 # Create your models here.
 from django.db import models
 from django.contrib.auth.models import User
+from django.utils import timezone
 
 
 class Environment(models.Model):
@@ -21,6 +22,41 @@ class Folder(models.Model):
 
     def __str__(self):
         return f"{self.environment.name} / {self.name}"
+
+    @property
+    def risk_score(self):
+        secrets = list(self.secrets.all())
+
+        if not secrets:
+            return 100
+
+        today = timezone.now().date()
+        scores = []
+
+        for secret in secrets:
+            score = 100
+
+            if not secret.service_name:
+                score -= 5
+
+            if not secret.owner_email:
+                score -= 10
+
+            if secret.expire_date:
+                days_left = (secret.expire_date - today).days
+                if days_left < 0:
+                    score -= 50
+                elif days_left <= 7:
+                    score -= 25
+                elif days_left <= 30:
+                    score -= 10
+
+            if secret.is_access_enabled:
+                score -= 10
+
+            scores.append(max(score, 0))
+
+        return round(sum(scores) / len(scores))
 
 
 class Secret(models.Model):
