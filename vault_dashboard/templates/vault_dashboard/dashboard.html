@@ -166,9 +166,16 @@
         <p class="text-muted mb-3">Set a regex for secret values. Secret add will be blocked if value does not match.</p>
         <form method="POST" action="{% url 'save_secret_policy' %}" class="row g-2 align-items-end">
             {% csrf_token %}
-            <div class="col-md-9">
+            <div class="col-md-6">
                 <label class="form-label">Secret Value Regex</label>
                 <input type="text" name="secret_value_regex" class="form-control" placeholder="Example: ^[A-Za-z0-9@#$%^&*]{12,}$" value="{{ secret_policy.secret_value_regex }}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Condition</label>
+                <select name="regex_mode" class="form-select">
+                    <option value="match" {% if secret_policy.regex_mode == 'match' %}selected{% endif %}>Should Match</option>
+                    <option value="not_match" {% if secret_policy.regex_mode == 'not_match' %}selected{% endif %}>Should Not Match</option>
+                </select>
             </div>
             <div class="col-md-3">
                 <button type="submit" class="btn btn-primary w-100">Save Regex</button>
@@ -295,7 +302,8 @@
                                     <form method="POST"
                                           action="{% url 'add_secret' folder.id %}"
                                           class="row g-2 mb-3 secret-form"
-                                          data-secret-regex="{{ secret_policy.secret_value_regex|escapejs }}">
+                                          data-secret-regex="{{ secret_policy.secret_value_regex|escapejs }}"
+                                          data-regex-mode="{{ secret_policy.regex_mode|default:'match' }}">
                                         {% csrf_token %}
                                         <div class="col-md-3">
                                             <input type="text" name="name" class="form-control" placeholder="Secret Name" required>
@@ -452,6 +460,7 @@ function attachSecretRegexValidation() {
     document.querySelectorAll("form.secret-form").forEach(form => {
         form.addEventListener("submit", function (e) {
             const pattern = form.dataset.secretRegex || "";
+            const mode = form.dataset.regexMode || "match";
             if (!pattern) return;
 
             const valueInput = form.querySelector('input[name="value"]');
@@ -459,9 +468,16 @@ function attachSecretRegexValidation() {
 
             try {
                 const regex = new RegExp(pattern);
-                if (!regex.test(value)) {
+                const isMatch = regex.test(value);
+
+                if (mode === "match" && !isMatch) {
                     e.preventDefault();
                     alert("Secret should match the configured regex in Settings.");
+                }
+
+                if (mode === "not_match" && isMatch) {
+                    e.preventDefault();
+                    alert("Secret should NOT match the configured regex in Settings.");
                 }
             } catch (err) {
                 e.preventDefault();

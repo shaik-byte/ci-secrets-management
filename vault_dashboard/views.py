@@ -219,11 +219,18 @@ def add_secret(request, folder_id):
 
         policy = SecretPolicy.objects.filter(created_by=request.user).first()
         regex_pattern = policy.secret_value_regex.strip() if policy else ""
+        regex_mode = policy.regex_mode if policy else "match"
 
         if regex_pattern:
             try:
-                if not re.fullmatch(regex_pattern, value or ""):
+                is_match = bool(re.fullmatch(regex_pattern, value or ""))
+
+                if regex_mode == "match" and not is_match:
                     messages.error(request, "Secret should match the configured regex policy.")
+                    return redirect("vault_dashboard")
+
+                if regex_mode == "not_match" and is_match:
+                    messages.error(request, "Secret should not match the configured regex policy.")
                     return redirect("vault_dashboard")
             except re.error:
                 messages.error(request, "Configured regex policy is invalid. Please update Settings.")
@@ -375,6 +382,10 @@ def delete_secret(request, secret_id):
 def save_secret_policy(request):
     if request.method == "POST":
         pattern = (request.POST.get("secret_value_regex") or "").strip()
+        regex_mode = (request.POST.get("regex_mode") or "match").strip()
+
+        if regex_mode not in {"match", "not_match"}:
+            regex_mode = "match"
 
         if pattern:
             try:
@@ -385,7 +396,8 @@ def save_secret_policy(request):
 
         policy, _ = SecretPolicy.objects.get_or_create(created_by=request.user)
         policy.secret_value_regex = pattern
-        policy.save(update_fields=["secret_value_regex", "updated_at"])
+        policy.regex_mode = regex_mode
+        policy.save(update_fields=["secret_value_regex", "regex_mode", "updated_at"])
 
         messages.success(request, "Secret regex policy saved successfully.")
 

@@ -36,8 +36,14 @@ class Secret(models.Model):
         return self.name
 
 class SecretPolicy(models.Model):
+    MATCH_MODE_CHOICES = [
+        ("match", "Should Match"),
+        ("not_match", "Should Not Match"),
+    ]
+
     created_by = models.OneToOneField(User, on_delete=models.CASCADE)
     secret_value_regex = models.CharField(max_length=500, blank=True, default="")
+    regex_mode = models.CharField(max_length=20, choices=MATCH_MODE_CHOICES, default="match")
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
