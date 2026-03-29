@@ -3,10 +3,12 @@
 # # Create your views here.
 # from django.shortcuts import render, redirect, get_object_or_404
 # from django.contrib.auth.decorators import login_required
-# from .models import Environment, Folder, Secret
+from django.contrib import messages
+# from .models import Environment, Folder, Secret, SecretPolicy
 # from .utils import encrypt_value, decrypt_value
 # from django.http import JsonResponse, HttpResponseForbidden
 # from datetime import datetime
+import re
 
 
 # @login_required
@@ -133,10 +135,12 @@
 
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
+from django.contrib import messages
 from django.http import JsonResponse, HttpResponseForbidden
 from datetime import datetime
+import re
 
-from .models import Environment, Folder, Secret
+from .models import Environment, Folder, Secret, SecretPolicy
 from .utils import encrypt_value, decrypt_value
 
 from auditlogs.models import AuditLog
@@ -149,9 +153,11 @@ def dashboard(request):
         return redirect("unseal")
 
     environments = Environment.objects.filter(created_by=request.user)
+    policy, _ = SecretPolicy.objects.get_or_create(created_by=request.user)
 
     return render(request, "vault_dashboard/dashboard.html", {
-        "environments": environments
+        "environments": environments,
+        "secret_policy": policy,
     })
 
 
@@ -210,6 +216,18 @@ def add_secret(request, folder_id):
         name = request.POST.get("name")
         value = request.POST.get("value")
         expire = request.POST.get("expire")
+
+        policy = SecretPolicy.objects.filter(created_by=request.user).first()
+        regex_pattern = policy.secret_value_regex.strip() if policy else ""
+
+        if regex_pattern:
+            try:
+                if not re.fullmatch(regex_pattern, value or ""):
+                    messages.error(request, "Secret should match the configured regex policy.")
+                    return redirect("vault_dashboard")
+            except re.error:
+                messages.error(request, "Configured regex policy is invalid. Please update Settings.")
+                return redirect("vault_dashboard")
 
         encrypted = encrypt_value(request, value)
 
@@ -349,6 +367,27 @@ def delete_secret(request, secret_id):
         )
 
         secret.delete()
+
+    return redirect("vault_dashboard")
+
+
+@login_required
+def save_secret_policy(request):
+    if request.method == "POST":
+        pattern = (request.POST.get("secret_value_regex") or "").strip()
+
+        if pattern:
+            try:
+                re.compile(pattern)
+            except re.error:
+                messages.error(request, "Invalid regex pattern. Please enter a valid regex.")
+                return redirect("vault_dashboard")
+
+        policy, _ = SecretPolicy.objects.get_or_create(created_by=request.user)
+        policy.secret_value_regex = pattern
+        policy.save(update_fields=["secret_value_regex", "updated_at"])
+
+        messages.success(request, "Secret regex policy saved successfully.")
 
     return redirect("vault_dashboard")
 

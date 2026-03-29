@@ -34,3 +34,12 @@ class Secret(models.Model):
 
     def __str__(self):
         return self.name
+
+class SecretPolicy(models.Model):
+    created_by = models.OneToOneField(User, on_delete=models.CASCADE)
+    secret_value_regex = models.CharField(max_length=500, blank=True, default="")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Secret Policy - {self.created_by.username}"
+
