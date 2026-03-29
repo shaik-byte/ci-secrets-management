@@ -169,3 +169,121 @@ Shaik Mahammad Gouse
 
 ---
 
+
+---
+
+## 🤖 Vault CLI Agent (Command Prompt)
+
+You can now manage secrets from the terminal without using the web UI.
+
+### CLI file
+
+- `cli/vault_agent.py`
+
+### What it supports
+
+- `login`: authenticate once and save a local CLI session
+- `list-secrets`: list all secrets in an environment/folder
+- `add-secret`: add a new secret in an environment/folder
+- `delete-secret`: delete a secret by id or name
+- `logout`: clear local CLI session
+
+### Install + run (Windows CMD / PowerShell / macOS / Linux)
+
+```bash
+# 1) Clone and enter project
+git clone <your-repository-url>
+cd ci-secrets-management
+
+# 2) Create and activate virtual env
+python -m venv .venv
+
+# Windows CMD
+.venv\Scripts\activate
+
+# PowerShell
+# .venv\Scripts\Activate.ps1
+
+# macOS/Linux
+# source .venv/bin/activate
+
+# 3) Install dependencies
+pip install -r requirements.txt
+
+# 4) Apply migrations
+python manage.py migrate
+
+# 5) Show CLI help
+python cli/vault_agent.py --help
+```
+
+### Authentication model for CLI
+
+Use one of these as `--root-token`:
+
+1. `VAULT_KEK` value from Django settings (operator token)
+2. Base64 root key token (if you already have the vault root key)
+
+You can authenticate once and save session:
+
+```bash
+python cli/vault_agent.py login --root-token "<YOUR_ROOT_TOKEN_OR_KEK>"
+```
+
+After login, the token is stored locally in:
+
+- `~/.vault_cli_session.json`
+
+You can also avoid local session and pass token every command:
+
+```bash
+python cli/vault_agent.py list-secrets --root-token "<TOKEN>" --environment prod --folder payments --show-values
+```
+
+Or set environment variable:
+
+```bash
+# Linux/macOS
+export VAULT_ROOT_TOKEN="<TOKEN>"
+
+# Windows CMD
+set VAULT_ROOT_TOKEN=<TOKEN>
+
+# PowerShell
+# $env:VAULT_ROOT_TOKEN="<TOKEN>"
+```
+
+### CLI usage examples
+
+```bash
+# Login once
+python cli/vault_agent.py login --root-token "<TOKEN>"
+
+# List secrets in env/folder
+python cli/vault_agent.py list-secrets --environment production --folder backend --show-values
+
+# Add secret
+python cli/vault_agent.py add-secret \
+  --environment production \
+  --folder backend \
+  --name STRIPE_API_KEY \
+  --value "sk_live_xxx" \
+  --service-name stripe \
+  --owner-email ops@example.com \
+  --expire-date 2026-12-31
+
+# Delete secret by name
+python cli/vault_agent.py delete-secret --environment production --folder backend --name STRIPE_API_KEY
+
+# Delete secret by id
+python cli/vault_agent.py delete-secret --environment production --folder backend --id 12
+
+# Logout / clear local CLI session
+python cli/vault_agent.py logout
+```
+
+### Notes
+
+- `list-secrets --show-values` decrypts and prints plaintext values.
+- `add-secret` stores values encrypted using the same root-key approach as the web app.
+- The CLI expects environment/folder names to already exist.
