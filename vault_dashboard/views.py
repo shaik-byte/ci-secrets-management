@@ -191,8 +191,9 @@ def add_folder(request, env_id):
 
     if request.method == "POST":
         name = request.POST.get("name")
+        owner_email = (request.POST.get("owner_email") or "").strip()
 
-        folder = Folder.objects.create(name=name, environment=env)
+        folder = Folder.objects.create(name=name, owner_email=owner_email, environment=env)
 
         AuditLog.objects.create(
             user=request.user,
@@ -215,7 +216,6 @@ def add_secret(request, folder_id):
     if request.method == "POST":
         name = request.POST.get("name")
         service_name = (request.POST.get("service_name") or "").strip()
-        owner_email = (request.POST.get("owner_email") or "").strip()
         value = request.POST.get("value")
         expire = request.POST.get("expire")
 
@@ -243,7 +243,6 @@ def add_secret(request, folder_id):
         secret = Secret.objects.create(
             name=name,
             service_name=service_name,
-            owner_email=owner_email,
             encrypted_value=encrypted,
             expire_date=datetime.strptime(expire, "%Y-%m-%d") if expire else None,
             folder=folder

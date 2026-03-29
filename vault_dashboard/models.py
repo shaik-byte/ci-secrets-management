@@ -17,6 +17,7 @@ class Environment(models.Model):
 
 class Folder(models.Model):
     name = models.CharField(max_length=255)
+    owner_email = models.EmailField(blank=True, default="")
     environment = models.ForeignKey(Environment, on_delete=models.CASCADE, related_name="folders")
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -39,7 +40,7 @@ class Folder(models.Model):
             if not secret.service_name:
                 score -= 5
 
-            if not secret.owner_email:
+            if not self.owner_email:
                 score -= 10
 
             if secret.expire_date:
@@ -62,7 +63,6 @@ class Folder(models.Model):
 class Secret(models.Model):
     name = models.CharField(max_length=255)
     service_name = models.CharField(max_length=255, blank=True, default="")
-    owner_email = models.EmailField(blank=True, default="")
     encrypted_value = models.BinaryField()
     notified = models.BooleanField(default=False)
     is_access_enabled = models.BooleanField(default=False)

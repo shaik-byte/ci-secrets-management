@@ -269,7 +269,6 @@ python cli/vault_agent.py add-secret \
   --name STRIPE_API_KEY \
   --value "sk_live_xxx" \
   --service-name stripe \
-  --owner-email ops@example.com \
   --expire-date 2026-12-31
 
 # Delete secret by name

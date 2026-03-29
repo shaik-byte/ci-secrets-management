@@ -150,7 +150,7 @@ def cmd_list_secrets(args: argparse.Namespace) -> int:
         print("No secrets found.")
         return 0
 
-    print(f"Secrets for {args.environment}/{args.folder}:")
+    print(f"Secrets for {args.environment}/{args.folder} (owner={folder.owner_email or '-' }):")
     for secret in secrets:
         row = [f"- id={secret.id}", f"name={secret.name}"]
         if args.show_values:
@@ -158,8 +158,6 @@ def cmd_list_secrets(args: argparse.Namespace) -> int:
             row.append(f"value={value}")
         if secret.service_name:
             row.append(f"service={secret.service_name}")
-        if secret.owner_email:
-            row.append(f"owner={secret.owner_email}")
         if secret.expire_date:
             row.append(f"expire={secret.expire_date.isoformat()}")
         print(" | ".join(row))
@@ -181,7 +179,6 @@ def cmd_add_secret(args: argparse.Namespace) -> int:
         name=args.name,
         encrypted_value=fernet.encrypt(args.value.encode()),
         service_name=args.service_name or "",
-        owner_email=args.owner_email or "",
         expire_date=expire_date,
         folder=folder,
     )
@@ -249,7 +246,6 @@ def build_parser() -> argparse.ArgumentParser:
     add_cmd.add_argument("--name", required=True, help="Secret name")
     add_cmd.add_argument("--value", required=True, help="Secret plaintext value")
     add_cmd.add_argument("--service-name", required=False, default="", help="Optional service name")
-    add_cmd.add_argument("--owner-email", required=False, default="", help="Optional owner email")
     add_cmd.add_argument(
         "--expire-date",
         required=False,
