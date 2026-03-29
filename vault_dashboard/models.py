@@ -25,6 +25,8 @@ class Folder(models.Model):
 
 class Secret(models.Model):
     name = models.CharField(max_length=255)
+    service_name = models.CharField(max_length=255, blank=True, default="")
+    owner_email = models.EmailField(blank=True, default="")
     encrypted_value = models.BinaryField()
     notified = models.BooleanField(default=False)
     is_access_enabled = models.BooleanField(default=False)

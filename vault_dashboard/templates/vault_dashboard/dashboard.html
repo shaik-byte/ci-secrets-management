@@ -305,16 +305,22 @@
                                           data-secret-regex="{{ secret_policy.secret_value_regex|escapejs }}"
                                           data-regex-mode="{{ secret_policy.regex_mode|default:'match' }}">
                                         {% csrf_token %}
-                                        <div class="col-md-3">
+                                        <div class="col-md-2">
                                             <input type="text" name="name" class="form-control" placeholder="Secret Name" required>
                                         </div>
-                                        <div class="col-md-4">
-                                            <input type="text" name="value" class="form-control" placeholder="Secret Value" required>
+                                        <div class="col-md-2">
+                                            <input type="text" name="service_name" class="form-control" placeholder="Service Name">
                                         </div>
                                         <div class="col-md-3">
+                                            <input type="email" name="owner_email" class="form-control" placeholder="Owner Email ID">
+                                        </div>
+                                        <div class="col-md-3">
+                                            <input type="text" name="value" class="form-control" placeholder="Secret Value" required>
+                                        </div>
+                                        <div class="col-md-1">
                                             <input type="date" name="expire" class="form-control">
                                         </div>
-                                        <div class="col-md-2">
+                                        <div class="col-md-1">
                                             <button type="submit" class="btn btn-success w-100">Add Secret</button>
                                         </div>
                                     </form>
@@ -324,15 +330,19 @@
                                         <thead class="table-dark">
                                             <tr>
                                                 <th>Name</th>
+                                                <th>Service</th>
+                                                <th>Owner Email</th>
                                                 <th>Secret</th>
                                                 <th>Expire Date</th>
-                                                <th width="200">Action</th>
+                                                <th width="220">Action</th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                         {% for secret in folder.secrets.all %}
                                             <tr>
                                                 <td>{{ secret.name }}</td>
+                                                <td>{{ secret.service_name|default:"-" }}</td>
+                                                <td>{{ secret.owner_email|default:"-" }}</td>
                                                 <td>
                                                     <span id="secret-{{ secret.id }}" class="secret-value">******</span>
                                                 </td>
@@ -388,7 +398,7 @@
 
                                         {% empty %}
                                             <tr>
-                                                <td colspan="4" class="text-muted text-center">
+                                                <td colspan="6" class="text-muted text-center">
                                                     No secrets yet
                                                 </td>
                                             </tr>
