@@ -734,6 +734,68 @@ def detach_policy_from_group(request):
     return redirect("vault_dashboard")
 
 
+@login_required
+def save_policy_groups_document(request):
+    if request.method != "POST":
+        return HttpResponseForbidden("Invalid request method")
+    if not request.user.is_superuser:
+        return HttpResponseForbidden("Only admin can manage policy groups.")
+
+    raw = (request.POST.get("group_policy_document") or "").strip()
+    doc_format = (request.POST.get("group_document_format") or "json").strip().lower()
+    if not raw:
+        messages.error(request, "Group policy document is empty.")
+        return redirect("vault_dashboard")
+
+    try:
+        parsed = json.loads(raw) if doc_format == "json" else yaml.safe_load(raw)
+    except Exception as exc:
+        messages.error(request, f"Invalid {doc_format.upper()} group policy document: {exc}")
+        return redirect("vault_dashboard")
+
+    groups = parsed.get("groups") if isinstance(parsed, dict) else None
+    if not isinstance(groups, list):
+        messages.error(request, "Group policy document must contain top-level 'groups' list.")
+        return redirect("vault_dashboard")
+
+    updated = 0
+    for item in groups:
+        name = (item.get("name") or "").strip()
+        if not name:
+            continue
+        description = (item.get("description") or "").strip()
+        group, _ = PolicyGroup.objects.update_or_create(
+            name=name,
+            defaults={"description": description, "created_by": request.user},
+        )
+
+        users = item.get("users") or []
+        if isinstance(users, list):
+            PolicyGroupMembership.objects.filter(group=group).exclude(
+                user__username__in=[u for u in users if isinstance(u, str)]
+            ).delete()
+            for username in users:
+                if not isinstance(username, str):
+                    continue
+                user_obj = User.objects.filter(username=username).first()
+                if user_obj:
+                    PolicyGroupMembership.objects.get_or_create(group=group, user=user_obj)
+
+        policy_ids = item.get("policy_ids") or []
+        if isinstance(policy_ids, list):
+            valid_ids = [pid for pid in policy_ids if isinstance(pid, int)]
+            PolicyGroupPolicy.objects.filter(group=group).exclude(policy_id__in=valid_ids).delete()
+            for pid in valid_ids:
+                policy = AccessPolicy.objects.filter(id=pid).first()
+                if policy:
+                    PolicyGroupPolicy.objects.get_or_create(group=group, policy=policy)
+
+        updated += 1
+
+    messages.success(request, f"Group policy document processed. Updated {updated} group(s).")
+    return redirect("vault_dashboard")
+
+
 def get_client_ip(request):
     x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
     if x_forwarded_for:

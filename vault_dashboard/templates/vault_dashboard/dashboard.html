@@ -360,19 +360,53 @@
 
     <div class="card p-4 mb-4 shadow-sm">
         <h5 class="mb-3">Policy Groups (RBAC)</h5>
-        <p class="text-muted mb-3">Create groups, attach policies, and manage members for role-based access control.</p>
-        <form method="POST" action="{% url 'create_policy_group' %}" class="row g-2 align-items-end">
+        <p class="text-muted mb-3">Create or update groups with clear role descriptions for production-grade RBAC.</p>
+        <form method="POST" action="{% url 'create_policy_group' %}" class="row g-3 align-items-end">
             {% csrf_token %}
-            <div class="col-md-4">
+            <div class="col-md-5">
                 <label class="form-label">Group Name</label>
                 <input type="text" name="name" class="form-control" placeholder="e.g. DevOps-ReadOnly" required>
             </div>
-            <div class="col-md-6">
+            <div class="col-md-5">
                 <label class="form-label">Description</label>
                 <input type="text" name="description" class="form-control" placeholder="Purpose of this access group">
             </div>
             <div class="col-md-2">
                 <button type="submit" class="btn btn-primary w-100">Save Group</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="card p-4 mb-4 shadow-sm">
+        <h5 class="mb-3">Manual Group Policy (JSON / YAML)</h5>
+        <p class="text-muted mb-2">Bulk-manage policy groups, memberships and policy attachments from JSON/YAML.</p>
+        <pre class="bg-light p-2 rounded small text-dark mb-3">{
+  "groups": [
+    {
+      "name": "DevOps-ReadOnly",
+      "description": "Read-only access for DevOps team",
+      "users": ["alice", "bob"],
+      "policy_ids": [1, 2, 4]
+    }
+  ]
+}</pre>
+        <form method="POST" action="{% url 'save_policy_groups_document' %}">
+            {% csrf_token %}
+            <div class="row g-2 align-items-end">
+                <div class="col-md-3">
+                    <label class="form-label">Format</label>
+                    <select name="group_document_format" class="form-select">
+                        <option value="json">JSON</option>
+                        <option value="yaml">YAML</option>
+                    </select>
+                </div>
+                <div class="col-md-9">
+                    <label class="form-label">Group Policy Document</label>
+                    <textarea name="group_policy_document" class="form-control policy-doc-editor" rows="8" placeholder="Paste group JSON/YAML document"></textarea>
+                </div>
+                <div class="col-md-12">
+                    <button type="submit" class="btn btn-outline-primary w-100">Save Group Policy Document</button>
+                </div>
             </div>
         </form>
     </div>

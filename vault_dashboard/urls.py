@@ -17,6 +17,7 @@ urlpatterns = [
     path('policy-engine/groups/remove-user/', views.remove_user_from_policy_group, name="remove_user_from_policy_group"),
     path('policy-engine/groups/attach-policy/', views.attach_policy_to_group, name="attach_policy_to_group"),
     path('policy-engine/groups/detach-policy/', views.detach_policy_from_group, name="detach_policy_from_group"),
+    path('policy-engine/groups/save-document/', views.save_policy_groups_document, name="save_policy_groups_document"),
     path('delete-environment/<int:env_id>/', views.delete_environment, name="delete_environment"),
     path('delete-folder/<int:folder_id>/', views.delete_folder, name="delete_folder"),
     path('delete-secret/<int:secret_id>/', views.delete_secret, name="delete_secret"),
