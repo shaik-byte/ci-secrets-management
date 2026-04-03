@@ -154,10 +154,41 @@ def dashboard(request):
 
     environments = Environment.objects.filter(created_by=request.user)
     policy, _ = SecretPolicy.objects.get_or_create(created_by=request.user)
+    policy_presets = [
+        {
+            "key": "strong_password",
+            "name": "Strong Password",
+            "regex": r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{12,}$",
+            "mode": "match",
+            "description": "12+ chars with uppercase, lowercase, number, and symbol.",
+        },
+        {
+            "key": "api_key_format",
+            "name": "API Key Format",
+            "regex": r"^[A-Za-z0-9_\-]{24,64}$",
+            "mode": "match",
+            "description": "Allow API-key style alphanumeric tokens (24-64 chars).",
+        },
+        {
+            "key": "no_whitespace",
+            "name": "No Whitespace",
+            "regex": r"^\S+$",
+            "mode": "match",
+            "description": "Reject any secret value containing spaces/tabs/newlines.",
+        },
+        {
+            "key": "block_placeholder_values",
+            "name": "Block Placeholder Values",
+            "regex": r"^(password|changeme|admin123|test123)$",
+            "mode": "not_match",
+            "description": "Disallow weak placeholder values.",
+        },
+    ]
 
     return render(request, "vault_dashboard/dashboard.html", {
         "environments": environments,
         "secret_policy": policy,
+        "policy_presets": policy_presets,
     })
 
 
