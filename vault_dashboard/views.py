@@ -141,7 +141,9 @@ from django.contrib.auth.models import User
 from django.db.models import Q
 from datetime import datetime
 import json
+import hashlib
 import re
+import secrets
 import yaml
 
 from .models import (
@@ -153,6 +155,9 @@ from .models import (
     PolicyGroup,
     PolicyGroupMembership,
     PolicyGroupPolicy,
+    MachinePolicy,
+    AppRole,
+    JWTWorkloadIdentity,
 )
 from .utils import encrypt_value, decrypt_value
 
@@ -272,6 +277,11 @@ def dashboard(request):
         "access_policies": AccessPolicy.objects.select_related("user", "environment", "folder", "secret").order_by("-updated_at")[:100],
         "policy_groups": PolicyGroup.objects.select_related("created_by").prefetch_related("memberships__user", "policy_links__policy").order_by("name"),
         "effective_access_rows": effective_access_rows,
+        "machine_policies": MachinePolicy.objects.select_related("access_policy").order_by("name"),
+        "approles": AppRole.objects.select_related("machine_policy").order_by("name"),
+        "jwt_identities": JWTWorkloadIdentity.objects.select_related("machine_policy").order_by("name"),
+        "new_approle_secret": request.session.pop("new_approle_secret", None),
+        "new_approle_role_name": request.session.pop("new_approle_role_name", None),
     })
 
 
@@ -793,6 +803,167 @@ def save_policy_groups_document(request):
         updated += 1
 
     messages.success(request, f"Group policy document processed. Updated {updated} group(s).")
+    return redirect("vault_dashboard")
+
+
+@login_required
+def save_machine_policy(request):
+    if request.method != "POST":
+        return HttpResponseForbidden("Invalid request method")
+    if not request.user.is_superuser:
+        return HttpResponseForbidden("Only admin can manage machine auth policies.")
+
+    name = (request.POST.get("name") or "").strip()
+    description = (request.POST.get("description") or "").strip()
+    access_policy = get_object_or_404(AccessPolicy, id=request.POST.get("access_policy_id"))
+    if not name:
+        messages.error(request, "Machine policy name is required.")
+        return redirect("vault_dashboard")
+
+    MachinePolicy.objects.update_or_create(
+        name=name,
+        defaults={
+            "description": description,
+            "access_policy": access_policy,
+            "created_by": request.user,
+        },
+    )
+    messages.success(request, f"Machine policy '{name}' saved.")
+    return redirect("vault_dashboard")
+
+
+@login_required
+def save_approle(request):
+    if request.method != "POST":
+        return HttpResponseForbidden("Invalid request method")
+    if not request.user.is_superuser:
+        return HttpResponseForbidden("Only admin can manage AppRole.")
+
+    name = (request.POST.get("name") or "").strip()
+    if not name:
+        messages.error(request, "AppRole name is required.")
+        return redirect("vault_dashboard")
+
+    machine_policy = get_object_or_404(MachinePolicy, id=request.POST.get("machine_policy_id"))
+    secret_id_plain = secrets.token_urlsafe(32)
+    secret_id_hash = hashlib.sha256(secret_id_plain.encode()).hexdigest()
+    bound_cidrs = (request.POST.get("bound_cidrs") or "").strip()
+    ttl = int(request.POST.get("token_ttl_seconds") or 3600)
+    is_active = bool(request.POST.get("is_active"))
+
+    AppRole.objects.update_or_create(
+        name=name,
+        defaults={
+            "machine_policy": machine_policy,
+            "secret_id_hash": secret_id_hash,
+            "bound_cidrs": bound_cidrs,
+            "token_ttl_seconds": ttl,
+            "is_active": is_active,
+        },
+    )
+
+    request.session["new_approle_secret"] = secret_id_plain
+    request.session["new_approle_role_name"] = name
+    messages.success(request, f"AppRole '{name}' saved. Copy generated Secret ID now.")
+    return redirect("vault_dashboard")
+
+
+@login_required
+def save_jwt_workload_identity(request):
+    if request.method != "POST":
+        return HttpResponseForbidden("Invalid request method")
+    if not request.user.is_superuser:
+        return HttpResponseForbidden("Only admin can manage JWT identities.")
+
+    name = (request.POST.get("name") or "").strip()
+    if not name:
+        messages.error(request, "JWT identity name is required.")
+        return redirect("vault_dashboard")
+
+    machine_policy = get_object_or_404(MachinePolicy, id=request.POST.get("machine_policy_id"))
+    JWTWorkloadIdentity.objects.update_or_create(
+        name=name,
+        defaults={
+            "issuer": (request.POST.get("issuer") or "").strip(),
+            "audience": (request.POST.get("audience") or "").strip(),
+            "subject_pattern": (request.POST.get("subject_pattern") or "").strip(),
+            "jwks_url": (request.POST.get("jwks_url") or "").strip(),
+            "machine_policy": machine_policy,
+            "is_active": bool(request.POST.get("is_active")),
+        },
+    )
+    messages.success(request, f"JWT workload identity '{name}' saved.")
+    return redirect("vault_dashboard")
+
+
+@login_required
+def save_machine_auth_document(request):
+    if request.method != "POST":
+        return HttpResponseForbidden("Invalid request method")
+    if not request.user.is_superuser:
+        return HttpResponseForbidden("Only admin can manage machine auth.")
+
+    raw = (request.POST.get("machine_auth_document") or "").strip()
+    doc_format = (request.POST.get("machine_auth_format") or "json").strip().lower()
+    if not raw:
+        messages.error(request, "Machine auth document is empty.")
+        return redirect("vault_dashboard")
+
+    try:
+        parsed = json.loads(raw) if doc_format == "json" else yaml.safe_load(raw)
+    except Exception as exc:
+        messages.error(request, f"Invalid {doc_format.upper()} machine auth document: {exc}")
+        return redirect("vault_dashboard")
+
+    updated = 0
+    for item in parsed.get("machine_policies", []):
+        mp_name = (item.get("name") or "").strip()
+        if not mp_name:
+            continue
+        access_policy = AccessPolicy.objects.filter(id=item.get("access_policy_id")).first()
+        if not access_policy:
+            continue
+        mp, _ = MachinePolicy.objects.update_or_create(
+            name=mp_name,
+            defaults={
+                "description": (item.get("description") or "").strip(),
+                "access_policy": access_policy,
+                "created_by": request.user,
+            },
+        )
+        for ar in item.get("approles", []):
+            ar_name = (ar.get("name") or "").strip()
+            if not ar_name:
+                continue
+            secret_id_plain = secrets.token_urlsafe(32)
+            AppRole.objects.update_or_create(
+                name=ar_name,
+                defaults={
+                    "machine_policy": mp,
+                    "secret_id_hash": hashlib.sha256(secret_id_plain.encode()).hexdigest(),
+                    "bound_cidrs": (ar.get("bound_cidrs") or "").strip(),
+                    "token_ttl_seconds": int(ar.get("token_ttl_seconds") or 3600),
+                    "is_active": bool(ar.get("is_active", True)),
+                },
+            )
+        for jw in item.get("jwt_identities", []):
+            jw_name = (jw.get("name") or "").strip()
+            if not jw_name:
+                continue
+            JWTWorkloadIdentity.objects.update_or_create(
+                name=jw_name,
+                defaults={
+                    "issuer": (jw.get("issuer") or "").strip(),
+                    "audience": (jw.get("audience") or "").strip(),
+                    "subject_pattern": (jw.get("subject_pattern") or "").strip(),
+                    "jwks_url": (jw.get("jwks_url") or "").strip(),
+                    "machine_policy": mp,
+                    "is_active": bool(jw.get("is_active", True)),
+                },
+            )
+        updated += 1
+
+    messages.success(request, f"Machine auth document processed. Updated {updated} machine policy set(s).")
     return redirect("vault_dashboard")
 
 

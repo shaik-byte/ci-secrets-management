@@ -4,6 +4,7 @@ from django.db import models
 from django.db import models
 from django.contrib.auth.models import User
 from django.utils import timezone
+import uuid
 
 
 class Environment(models.Model):
@@ -143,3 +144,44 @@ class PolicyGroupPolicy(models.Model):
 
     def __str__(self):
         return f"{self.group.name} -> policy:{self.policy_id}"
+
+
+class MachinePolicy(models.Model):
+    name = models.CharField(max_length=120, unique=True)
+    description = models.CharField(max_length=300, blank=True, default="")
+    access_policy = models.ForeignKey(AccessPolicy, on_delete=models.CASCADE, related_name="machine_policies")
+    created_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name="created_machine_policies")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name
+
+
+class AppRole(models.Model):
+    name = models.CharField(max_length=120, unique=True)
+    role_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    secret_id_hash = models.CharField(max_length=128)
+    bound_cidrs = models.CharField(max_length=300, blank=True, default="")
+    token_ttl_seconds = models.IntegerField(default=3600)
+    machine_policy = models.ForeignKey(MachinePolicy, on_delete=models.CASCADE, related_name="approles")
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"AppRole<{self.name}>"
+
+
+class JWTWorkloadIdentity(models.Model):
+    name = models.CharField(max_length=120, unique=True)
+    issuer = models.CharField(max_length=255)
+    audience = models.CharField(max_length=255)
+    subject_pattern = models.CharField(max_length=255, blank=True, default="")
+    jwks_url = models.URLField(blank=True, default="")
+    machine_policy = models.ForeignKey(MachinePolicy, on_delete=models.CASCADE, related_name="jwt_identities")
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"JWT<{self.name}>"
