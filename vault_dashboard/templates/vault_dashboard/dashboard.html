@@ -194,54 +194,6 @@
 
 <div id="section-policy" class="container mt-1" style="display:none;">
     <div class="card p-4 mb-4 shadow-sm">
-        <h5 class="mb-3">Policy Engine</h5>
-        <p class="text-muted mb-3">Choose a policy filter from the list, then apply or customize and save it</p>
-
-        <div class="row g-2 align-items-end mb-3">
-            <div class="col-md-9">
-                <label class="form-label">Policy Filter</label>
-                <select id="policy-filter-select" class="form-select">
-                    <option value="">-- Select Policy Filter --</option>
-                    {% for preset in policy_presets %}
-                    <option
-                        value="{{ preset.key }}"
-                        data-regex="{{ preset.regex|escape }}"
-                        data-mode="{{ preset.mode }}"
-                        data-description="{{ preset.description|escape }}"
-                    >
-                        {{ preset.name }}
-                    </option>
-                    {% endfor %}
-                </select>
-                <small id="policy-filter-description" class="text-muted d-block mt-1"></small>
-            </div>
-            <div class="col-md-3">
-                <button type="button" class="btn btn-outline-primary w-100" onclick="applySelectedPolicyFilter()">
-                    Apply Filter
-                </button>
-            </div>
-        </div>
-
-        <form method="POST" action="{% url 'save_secret_policy' %}" class="row g-2 align-items-end">
-            {% csrf_token %}
-            <div class="col-md-6">
-                <label class="form-label">Secret Value Regex</label>
-                <input id="policy-regex-input" type="text" name="secret_value_regex" class="form-control" placeholder="Example: ^[A-Za-z0-9@#$%^&*]{12,}$" value="{{ secret_policy.secret_value_regex }}">
-            </div>
-            <div class="col-md-3">
-                <label class="form-label">Condition</label>
-                <select id="policy-mode-select" name="regex_mode" class="form-select">
-                    <option value="match" {% if secret_policy.regex_mode == 'match' %}selected{% endif %}>Should Match</option>
-                    <option value="not_match" {% if secret_policy.regex_mode == 'not_match' %}selected{% endif %}>Should Not Match</option>
-                </select>
-            </div>
-            <div class="col-md-3">
-                <button type="submit" class="btn btn-primary w-100">Save Policy</button>
-            </div>
-        </form>
-    </div>
-
-    <div class="card p-4 mb-4 shadow-sm">
         <h5 class="mb-3">User Access Control (UI)</h5>
         <p class="text-muted mb-3">Grant read/write/delete permissions on environment, folder, or secret for a selected user.</p>
         <form method="POST" action="{% url 'save_access_policy_ui' %}" class="row g-2 align-items-end">
@@ -669,29 +621,6 @@ function showSection(section) {
     if (pageTitle) {
         pageTitle.innerText = sectionTitles[normalizedSection] || "Dashboard";
     }
-}
-
-function applySelectedPolicyFilter() {
-    const select = document.getElementById("policy-filter-select");
-    const regexInput = document.getElementById("policy-regex-input");
-    const modeSelect = document.getElementById("policy-mode-select");
-    const desc = document.getElementById("policy-filter-description");
-
-    if (!select || !regexInput || !modeSelect) return;
-
-    const option = select.options[select.selectedIndex];
-    const regex = option ? option.getAttribute("data-regex") : "";
-    const mode = option ? option.getAttribute("data-mode") : "match";
-    const description = option ? option.getAttribute("data-description") : "";
-
-    if (!regex) {
-        if (desc) desc.innerText = "";
-        return;
-    }
-
-    regexInput.value = regex;
-    modeSelect.value = mode || "match";
-    if (desc) desc.innerText = description || "";
 }
 
 function resetAccessPolicyForm() {
