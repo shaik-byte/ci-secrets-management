@@ -101,6 +101,16 @@
             flex: 1;
             overflow-x: auto;
         }
+
+        .policy-doc-editor {
+            background-color: #000 !important;
+            color: #fff !important;
+            border: 1px solid #1f2937 !important;
+        }
+
+        .policy-doc-editor::placeholder {
+            color: #9ca3af !important;
+        }
     </style>
 </head>
 
@@ -288,7 +298,7 @@
                 </div>
                 <div class="col-md-9">
                     <label class="form-label">Policy Document</label>
-                    <textarea name="policy_document" class="form-control" rows="8" placeholder="Paste JSON or YAML policy document"></textarea>
+                    <textarea name="policy_document" class="form-control policy-doc-editor" rows="8" placeholder="Paste JSON or YAML policy document"></textarea>
                 </div>
                 <div class="col-md-12">
                     <button type="submit" class="btn btn-outline-primary w-100">Save Manual Policy Document</button>
