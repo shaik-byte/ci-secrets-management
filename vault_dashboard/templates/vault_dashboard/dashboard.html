@@ -181,6 +181,39 @@
         <h5 class="mb-2">Choose a module from the sidebar</h5>
         <p class="text-muted mb-0">Click <strong>Secrets Manager</strong> to load all secrets on the right side.</p>
     </div>
+
+    {% if request.user.is_superuser %}
+    <div id="superuser-activity" class="card p-4 mb-4 shadow-sm">
+        <h5 class="mb-2">Latest user-created resources</h5>
+        <p class="text-muted mb-3">This reflects items created by normal users (environment/folder/secret) in real time.</p>
+        <div class="table-responsive">
+            <table class="table table-sm table-striped align-middle">
+                <thead class="table-dark">
+                    <tr>
+                        <th>User</th>
+                        <th>Entity</th>
+                        <th>Details</th>
+                        <th>Timestamp</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for log in recent_user_creations %}
+                    <tr>
+                        <td>{{ log.user.username }}</td>
+                        <td>{{ log.entity }}</td>
+                        <td>{{ log.details }}</td>
+                        <td>{{ log.timestamp }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="4" class="text-muted text-center">No normal-user creation activity yet.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
 </div>
 
 <div id="section-settings" class="container mt-1" style="display:none;">
@@ -906,6 +939,9 @@
                         data-bs-toggle="collapse"
                         data-bs-target="#collapseEnv{{ env.id }}">
                     {{ env.name }}
+                    {% if request.user.is_superuser %}
+                    <span class="badge bg-light text-dark ms-2">Created by: {{ env.created_by.username }}</span>
+                    {% endif %}
                 </button>
 
                 <button class="btn btn-outline-danger btn-sm me-3"
@@ -1152,6 +1188,7 @@ function showSection(section) {
     };
 
     const welcome = document.getElementById("welcome-panel");
+    const superuserActivity = document.getElementById("superuser-activity");
     const dashboardBtn = document.getElementById("nav-dashboard");
     const pageTitle = document.getElementById("page-title");
     const isDashboard = section === "dashboard" || !section;
@@ -1170,6 +1207,9 @@ function showSection(section) {
 
     if (welcome) {
         welcome.style.display = isDashboard ? "block" : "none";
+    }
+    if (superuserActivity) {
+        superuserActivity.style.display = isDashboard ? "block" : "none";
     }
 
     const normalizedSection = isDashboard ? "dashboard" : section;

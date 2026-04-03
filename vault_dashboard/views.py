@@ -225,14 +225,17 @@ def dashboard(request):
     if "vault_key" not in request.session:
         return redirect("unseal")
 
-    readable_env_ids = AccessPolicy.objects.filter(
-        user=request.user,
-        can_read=True,
-        environment__isnull=False,
-    ).values_list("environment_id", flat=True)
-    environments = Environment.objects.filter(
-        Q(created_by=request.user) | Q(id__in=readable_env_ids)
-    ).distinct()
+    if request.user.is_superuser:
+        environments = Environment.objects.select_related("created_by").all()
+    else:
+        readable_env_ids = AccessPolicy.objects.filter(
+            user=request.user,
+            can_read=True,
+            environment__isnull=False,
+        ).values_list("environment_id", flat=True)
+        environments = Environment.objects.filter(
+            Q(created_by=request.user) | Q(id__in=readable_env_ids)
+        ).distinct()
     policy, _ = SecretPolicy.objects.get_or_create(created_by=request.user)
     policy_presets = [
         {
@@ -297,6 +300,7 @@ def dashboard(request):
         "new_approle_role_name": request.session.pop("new_approle_role_name", None),
         "pending_deletion_approvals": DeletionApprovalRequest.objects.select_related("requested_by").filter(status="pending")[:100] if request.user.is_superuser else [],
         "recent_deletion_approvals": DeletionApprovalRequest.objects.select_related("requested_by", "approver").exclude(status="pending")[:100] if request.user.is_superuser else [],
+        "recent_user_creations": AuditLog.objects.select_related("user").filter(action="CREATE", user__is_superuser=False).order_by("-timestamp")[:20] if request.user.is_superuser else [],
     })
 
 
