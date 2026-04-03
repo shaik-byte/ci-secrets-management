@@ -128,9 +128,11 @@
         <button id="nav-settings" class="sidebar-item" type="button" onclick="showSection('settings')">
             Settings
         </button>
+        {% if request.user.is_superuser %}
         <button id="nav-policy" class="sidebar-item" type="button" onclick="showSection('policy')">
             Policy Engine
         </button>
+        {% endif %}
         {% if request.user.is_superuser %}
         <button id="nav-approvals" class="sidebar-item" type="button" onclick="showSection('approvals')">
             Approvals
@@ -240,6 +242,7 @@
     </div>
 </div>
 
+{% if request.user.is_superuser %}
 <div id="section-policy" class="container mt-1" style="display:none;">
     <div class="card p-4 mb-4 shadow-sm">
         <h5 class="mb-3">User Access Control (UI)</h5>
@@ -829,6 +832,7 @@
         </div>
     </div>
 </div>
+{% endif %}
 
 {% if request.user.is_superuser %}
 <div id="section-approvals" class="container mt-1" style="display:none;">
