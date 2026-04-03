@@ -126,7 +126,7 @@
     <main class="content-area">
 <div class="container mt-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2>Secrets Manager</h2>
+        <h2 id="page-title">Dashboard</h2>
 
         <div class="d-flex align-items-center gap-3">
             <span class="badge rounded-pill text-bg-light" title="Logged in user">
@@ -195,7 +195,7 @@
 <div id="section-policy" class="container mt-1" style="display:none;">
     <div class="card p-4 mb-4 shadow-sm">
         <h5 class="mb-3">Policy Engine</h5>
-        <p class="text-muted mb-3">Choose a policy filter from the list, then apply or customize and save it.</p>
+        <p class="text-muted mb-3">Choose a policy filter from the list, then apply or customize and save it</p>
 
         <div class="row g-2 align-items-end mb-3">
             <div class="col-md-9">
@@ -637,9 +637,16 @@
 <script>
 function showSection(section) {
     const sections = ["secrets", "settings", "policy"];
+    const sectionTitles = {
+        dashboard: "Dashboard",
+        secrets: "Secrets Manager",
+        settings: "Settings",
+        policy: "Policy Engine",
+    };
 
     const welcome = document.getElementById("welcome-panel");
     const dashboardBtn = document.getElementById("nav-dashboard");
+    const pageTitle = document.getElementById("page-title");
     const isDashboard = section === "dashboard" || !section;
 
     sections.forEach(name => {
@@ -656,6 +663,11 @@ function showSection(section) {
 
     if (welcome) {
         welcome.style.display = isDashboard ? "block" : "none";
+    }
+
+    const normalizedSection = isDashboard ? "dashboard" : section;
+    if (pageTitle) {
+        pageTitle.innerText = sectionTitles[normalizedSection] || "Dashboard";
     }
 }
 
