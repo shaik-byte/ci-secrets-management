@@ -22,6 +22,7 @@ urlpatterns = [
     path('policy-engine/machine/save-approle/', views.save_approle, name="save_approle"),
     path('policy-engine/machine/save-jwt/', views.save_jwt_workload_identity, name="save_jwt_workload_identity"),
     path('policy-engine/machine/save-document/', views.save_machine_auth_document, name="save_machine_auth_document"),
+    path('policy-engine/machine/jwt/login/', views.jwt_machine_login, name="jwt_machine_login"),
     path('delete-environment/<int:env_id>/', views.delete_environment, name="delete_environment"),
     path('delete-folder/<int:folder_id>/', views.delete_folder, name="delete_folder"),
     path('delete-secret/<int:secret_id>/', views.delete_secret, name="delete_secret"),

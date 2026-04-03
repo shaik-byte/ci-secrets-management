@@ -138,13 +138,20 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.http import JsonResponse, HttpResponseForbidden
 from django.contrib.auth.models import User
+from django.core.cache import cache
 from django.db.models import Q
-from datetime import datetime
+from django.utils import timezone
+from django.views.decorators.csrf import csrf_exempt
+from datetime import datetime, timedelta
+from fnmatch import fnmatch
 import json
 import hashlib
 import re
 import secrets
 import yaml
+import requests
+import jwt
+from jwt import InvalidTokenError
 
 from .models import (
     Environment,
@@ -158,10 +165,14 @@ from .models import (
     MachinePolicy,
     AppRole,
     JWTWorkloadIdentity,
+    MachineSessionToken,
 )
 from .utils import encrypt_value, decrypt_value
 
 from auditlogs.models import AuditLog
+
+MACHINE_SESSION_TTL_SECONDS = 3600
+JWKS_CACHE_TTL_SECONDS = 300
 
 
 def _action_field(action):
@@ -804,6 +815,154 @@ def save_policy_groups_document(request):
 
     messages.success(request, f"Group policy document processed. Updated {updated} group(s).")
     return redirect("vault_dashboard")
+
+
+def _normalize_audience(aud_claim):
+    if isinstance(aud_claim, list):
+        return [str(a) for a in aud_claim]
+    if aud_claim in (None, ""):
+        return []
+    return [str(aud_claim)]
+
+
+def _get_signing_key_from_jwks(jwks_url, kid):
+    cache_key = f"jwks_cache:{hashlib.sha256(jwks_url.encode()).hexdigest()}"
+    jwks = cache.get(cache_key)
+    if not jwks:
+        response = requests.get(jwks_url, timeout=5)
+        response.raise_for_status()
+        jwks = response.json()
+        cache.set(cache_key, jwks, JWKS_CACHE_TTL_SECONDS)
+
+    keys = jwks.get("keys", []) if isinstance(jwks, dict) else []
+    if kid:
+        for key in keys:
+            if key.get("kid") == kid:
+                return jwt.PyJWK.from_dict(key).key
+
+    if len(keys) == 1:
+        return jwt.PyJWK.from_dict(keys[0]).key
+
+    raise ValueError("Unable to resolve signing key from JWKS.")
+
+
+def _build_scope_payload(access_policy):
+    scope = "global"
+    if access_policy.secret_id:
+        scope = f"secret:{access_policy.secret_id}"
+    elif access_policy.folder_id:
+        scope = f"folder:{access_policy.folder_id}"
+    elif access_policy.environment_id:
+        scope = f"environment:{access_policy.environment_id}"
+
+    return {
+        "scope": scope,
+        "can_read": access_policy.can_read,
+        "can_write": access_policy.can_write,
+        "can_delete": access_policy.can_delete,
+    }
+
+
+@csrf_exempt
+def jwt_machine_login(request):
+    if request.method != "POST":
+        return JsonResponse({"error": "POST method required."}, status=405)
+
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+    except Exception:
+        return JsonResponse({"error": "Invalid JSON body."}, status=400)
+
+    token = (payload.get("jwt") or payload.get("token") or "").strip()
+    identity_name = (payload.get("identity_name") or "").strip()
+    if not token:
+        return JsonResponse({"error": "Field 'jwt' is required."}, status=400)
+
+    try:
+        unverified_header = jwt.get_unverified_header(token)
+        unverified_claims = jwt.decode(token, options={"verify_signature": False})
+    except Exception as exc:
+        return JsonResponse({"error": f"Invalid JWT format: {exc}"}, status=400)
+
+    issuer = str(unverified_claims.get("iss") or "").strip()
+    subject = str(unverified_claims.get("sub") or "").strip()
+    audiences = _normalize_audience(unverified_claims.get("aud"))
+    kid = unverified_header.get("kid")
+    if not issuer:
+        return JsonResponse({"error": "JWT 'iss' claim is required."}, status=400)
+    if not audiences:
+        return JsonResponse({"error": "JWT 'aud' claim is required."}, status=400)
+
+    identities = JWTWorkloadIdentity.objects.select_related("machine_policy", "machine_policy__access_policy").filter(
+        issuer=issuer,
+        audience__in=audiences,
+        is_active=True,
+    )
+    if identity_name:
+        identities = identities.filter(name=identity_name)
+    identities = list(identities)
+    if not identities:
+        return JsonResponse({"error": "No active JWT workload identity matches this token."}, status=403)
+
+    verified_identity = None
+    verified_claims = None
+    for identity in identities:
+        if identity.subject_pattern and not fnmatch(subject, identity.subject_pattern):
+            continue
+        if not identity.jwks_url:
+            continue
+        try:
+            key = _get_signing_key_from_jwks(identity.jwks_url, kid)
+            verified = jwt.decode(
+                token,
+                key=key,
+                algorithms=[unverified_header.get("alg", "RS256")],
+                audience=identity.audience,
+                issuer=identity.issuer,
+                options={"require": ["exp", "iat", "iss", "sub"]},
+            )
+        except (InvalidTokenError, ValueError, requests.RequestException):
+            continue
+        verified_identity = identity
+        verified_claims = verified
+        break
+
+    if not verified_identity:
+        return JsonResponse({"error": "JWT verification failed for all matching identities."}, status=403)
+
+    raw_machine_token = f"mvt_{secrets.token_urlsafe(48)}"
+    machine_token_hash = hashlib.sha256(raw_machine_token.encode()).hexdigest()
+    expires_at = timezone.now() + timedelta(seconds=MACHINE_SESSION_TTL_SECONDS)
+    MachineSessionToken.objects.create(
+        token_hash=machine_token_hash,
+        machine_policy=verified_identity.machine_policy,
+        jwt_identity=verified_identity,
+        subject=str(verified_claims.get("sub") or ""),
+        issuer=str(verified_claims.get("iss") or ""),
+        audience=verified_identity.audience,
+        jwt_id=str(verified_claims.get("jti") or ""),
+        claims_snapshot={
+            "sub": verified_claims.get("sub"),
+            "iss": verified_claims.get("iss"),
+            "aud": verified_claims.get("aud"),
+        },
+        expires_at=expires_at,
+        is_active=True,
+    )
+
+    access_policy = verified_identity.machine_policy.access_policy
+    return JsonResponse(
+        {
+            "machine_token": raw_machine_token,
+            "token_type": "Bearer",
+            "expires_at": expires_at.isoformat(),
+            "expires_in": MACHINE_SESSION_TTL_SECONDS,
+            "identity": verified_identity.name,
+            "machine_policy": verified_identity.machine_policy.name,
+            "access": _build_scope_payload(access_policy),
+        },
+        status=200,
+    )
 
 
 @login_required

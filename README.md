@@ -286,3 +286,27 @@ python cli/vault_agent.py logout
 - `list-secrets --show-values` decrypts and prints plaintext values.
 - `add-secret` stores values encrypted using the same root-key approach as the web app.
 - The CLI expects environment/folder names to already exist.
+
+---
+
+## 🔧 JWT Machine Login Endpoint (Policy Engine)
+
+Machine/workload identities can authenticate with JWT using:
+
+- `POST /secrets/policy-engine/machine/jwt/login/`
+
+Request body:
+
+```json
+{
+  "jwt": "<signed workload JWT>",
+  "identity_name": "optional-jwt-identity-name"
+}
+```
+
+Response includes:
+
+- `machine_token` (generated vault machine session token)
+- `expires_in` / `expires_at`
+- resolved `machine_policy`
+- effective access scope (`read/write/delete`)

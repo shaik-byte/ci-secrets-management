@@ -4,6 +4,7 @@ from django.db import models
 from django.db import models
 from django.contrib.auth.models import User
 from django.utils import timezone
+from django.db.models import JSONField
 import uuid
 
 
@@ -185,3 +186,21 @@ class JWTWorkloadIdentity(models.Model):
 
     def __str__(self):
         return f"JWT<{self.name}>"
+
+
+class MachineSessionToken(models.Model):
+    token_hash = models.CharField(max_length=128, unique=True)
+    machine_policy = models.ForeignKey(MachinePolicy, on_delete=models.CASCADE, related_name="session_tokens")
+    jwt_identity = models.ForeignKey(JWTWorkloadIdentity, on_delete=models.SET_NULL, null=True, blank=True, related_name="session_tokens")
+    subject = models.CharField(max_length=255, blank=True, default="")
+    issuer = models.CharField(max_length=255, blank=True, default="")
+    audience = models.CharField(max_length=255, blank=True, default="")
+    jwt_id = models.CharField(max_length=255, blank=True, default="")
+    claims_snapshot = JSONField(default=dict, blank=True)
+    expires_at = models.DateTimeField()
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"MachineSession<{self.machine_policy.name}>"
