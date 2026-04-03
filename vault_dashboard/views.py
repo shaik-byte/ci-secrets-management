@@ -488,6 +488,10 @@ def _resolve_delete_target(approval):
     return None
 
 
+def _should_route_delete_to_approval(user, environment):
+    return (not user.is_superuser) and bool(environment.require_admin_delete_approval)
+
+
 # =========================
 # DELETE ENVIRONMENT
 # =========================
@@ -498,7 +502,7 @@ def delete_environment(request, env_id):
         return HttpResponseForbidden("You do not have delete access to this environment.")
 
     if request.method == "POST":
-        if not request.user.is_superuser:
+        if _should_route_delete_to_approval(request.user, env):
             approval = _create_deletion_approval(request, "environment", env)
             AuditLog.objects.create(
                 user=request.user,
@@ -532,7 +536,7 @@ def delete_folder(request, folder_id):
         return HttpResponseForbidden("You do not have delete access to this folder.")
 
     if request.method == "POST":
-        if not request.user.is_superuser:
+        if _should_route_delete_to_approval(request.user, folder.environment):
             approval = _create_deletion_approval(request, "folder", folder)
             AuditLog.objects.create(
                 user=request.user,
@@ -566,7 +570,7 @@ def delete_secret(request, secret_id):
         return HttpResponseForbidden("You do not have delete access to this secret.")
 
     if request.method == "POST":
-        if not request.user.is_superuser:
+        if _should_route_delete_to_approval(request.user, secret.folder.environment):
             approval = _create_deletion_approval(request, "secret", secret)
             AuditLog.objects.create(
                 user=request.user,
@@ -654,6 +658,29 @@ def reject_deletion_request(request, approval_id):
     )
 
     messages.info(request, f"Rejected request #{approval.id}.")
+    return redirect("vault_dashboard")
+
+
+@login_required
+def toggle_environment_delete_approval(request, env_id):
+    if request.method != "POST":
+        return HttpResponseForbidden("Invalid request method")
+    if not request.user.is_superuser:
+        return HttpResponseForbidden("Only admin can change approval mode.")
+
+    env = get_object_or_404(Environment, id=env_id)
+    env.require_admin_delete_approval = not env.require_admin_delete_approval
+    env.save(update_fields=["require_admin_delete_approval"])
+
+    state = "enabled" if env.require_admin_delete_approval else "disabled"
+    AuditLog.objects.create(
+        user=request.user,
+        action='UPDATE',
+        entity='Environment',
+        details=f"Admin {state} manual delete approval mode for environment '{env.name}'",
+        ip_address=get_client_ip(request)
+    )
+    messages.success(request, f"Manual delete approval {state} for environment '{env.name}'.")
     return redirect("vault_dashboard")
 
 

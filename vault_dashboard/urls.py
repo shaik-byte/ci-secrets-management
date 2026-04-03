@@ -25,6 +25,7 @@ urlpatterns = [
     path('policy-engine/machine/jwt/login/', views.jwt_machine_login, name="jwt_machine_login"),
     path('approvals/<int:approval_id>/approve/', views.approve_deletion_request, name="approve_deletion_request"),
     path('approvals/<int:approval_id>/reject/', views.reject_deletion_request, name="reject_deletion_request"),
+    path('environment/<int:env_id>/toggle-delete-approval/', views.toggle_environment_delete_approval, name="toggle_environment_delete_approval"),
     path('delete-environment/<int:env_id>/', views.delete_environment, name="delete_environment"),
     path('delete-folder/<int:folder_id>/', views.delete_folder, name="delete_folder"),
     path('delete-secret/<int:secret_id>/', views.delete_secret, name="delete_secret"),

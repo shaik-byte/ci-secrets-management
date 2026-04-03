@@ -941,14 +941,27 @@
                     {{ env.name }}
                     {% if request.user.is_superuser %}
                     <span class="badge bg-light text-dark ms-2">Created by: {{ env.created_by.username }}</span>
+                    <span class="badge {% if env.require_admin_delete_approval %}bg-warning text-dark{% else %}bg-secondary{% endif %} ms-2">
+                        Approval: {% if env.require_admin_delete_approval %}Enabled{% else %}Disabled{% endif %}
+                    </span>
                     {% endif %}
                 </button>
 
-                <button class="btn btn-outline-danger btn-sm me-3"
-                        data-bs-toggle="modal"
-                        data-bs-target="#deleteEnvModal{{ env.id }}">
-                    Delete
-                </button>
+                <div class="d-flex align-items-center gap-2 me-3">
+                    {% if request.user.is_superuser %}
+                    <form method="POST" action="{% url 'toggle_environment_delete_approval' env.id %}">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-outline-warning btn-sm">
+                            {% if env.require_admin_delete_approval %}Disable Approval{% else %}Enable Approval{% endif %}
+                        </button>
+                    </form>
+                    {% endif %}
+                    <button class="btn btn-outline-danger btn-sm"
+                            data-bs-toggle="modal"
+                            data-bs-target="#deleteEnvModal{{ env.id }}">
+                        Delete
+                    </button>
+                </div>
             </h2>
 
             <!-- DELETE ENVIRONMENT MODAL -->
@@ -963,7 +976,11 @@
                             {% if request.user.is_superuser %}
                             Are you sure you want to delete <strong>{{ env.name }}</strong> ?
                             {% else %}
-                            Submit delete request for <strong>{{ env.name }}</strong> to root/super user approval?
+                                {% if env.require_admin_delete_approval %}
+                                Submit delete request for <strong>{{ env.name }}</strong> to root/super user approval?
+                                {% else %}
+                                Are you sure you want to delete <strong>{{ env.name }}</strong> ?
+                                {% endif %}
                             {% endif %}
                         </div>
                         <div class="modal-footer">
@@ -971,7 +988,11 @@
                             <form method="POST" action="{% url 'delete_environment' env.id %}">
                                 {% csrf_token %}
                                 <button type="submit" class="btn btn-danger">
-                                    {% if request.user.is_superuser %}Yes, Delete{% else %}Send Approval Request{% endif %}
+                                    {% if request.user.is_superuser %}
+                                        Yes, Delete
+                                    {% else %}
+                                        {% if env.require_admin_delete_approval %}Send Approval Request{% else %}Yes, Delete{% endif %}
+                                    {% endif %}
                                 </button>
                             </form>
                         </div>
@@ -1028,7 +1049,11 @@
                                             {% if request.user.is_superuser %}
                                             Are you sure you want to delete <strong>{{ folder.name }}</strong> ?
                                             {% else %}
-                                            Submit delete request for <strong>{{ folder.name }}</strong> to root/super user approval?
+                                                {% if env.require_admin_delete_approval %}
+                                                Submit delete request for <strong>{{ folder.name }}</strong> to root/super user approval?
+                                                {% else %}
+                                                Are you sure you want to delete <strong>{{ folder.name }}</strong> ?
+                                                {% endif %}
                                             {% endif %}
                                         </div>
                                         <div class="modal-footer">
@@ -1036,7 +1061,11 @@
                                             <form method="POST" action="{% url 'delete_folder' folder.id %}">
                                                 {% csrf_token %}
                                                 <button type="submit" class="btn btn-danger">
-                                                    {% if request.user.is_superuser %}Yes, Delete{% else %}Send Approval Request{% endif %}
+                                                    {% if request.user.is_superuser %}
+                                                        Yes, Delete
+                                                    {% else %}
+                                                        {% if env.require_admin_delete_approval %}Send Approval Request{% else %}Yes, Delete{% endif %}
+                                                    {% endif %}
                                                 </button>
                                             </form>
                                         </div>
@@ -1133,7 +1162,11 @@
                                                             {% if request.user.is_superuser %}
                                                             Are you sure you want to delete <strong>{{ secret.name }}</strong> ?
                                                             {% else %}
-                                                            Submit delete request for <strong>{{ secret.name }}</strong> to root/super user approval?
+                                                                {% if env.require_admin_delete_approval %}
+                                                                Submit delete request for <strong>{{ secret.name }}</strong> to root/super user approval?
+                                                                {% else %}
+                                                                Are you sure you want to delete <strong>{{ secret.name }}</strong> ?
+                                                                {% endif %}
                                                             {% endif %}
                                                         </div>
                                                         <div class="modal-footer">
@@ -1141,7 +1174,11 @@
                                                             <form method="POST" action="{% url 'delete_secret' secret.id %}">
                                                                 {% csrf_token %}
                                                                 <button type="submit" class="btn btn-danger">
-                                                                    {% if request.user.is_superuser %}Yes, Delete{% else %}Send Approval Request{% endif %}
+                                                                    {% if request.user.is_superuser %}
+                                                                        Yes, Delete
+                                                                    {% else %}
+                                                                        {% if env.require_admin_delete_approval %}Send Approval Request{% else %}Yes, Delete{% endif %}
+                                                                    {% endif %}
                                                                 </button>
                                                             </form>
                                                         </div>
