@@ -11,6 +11,7 @@ urlpatterns = [
     path('settings/save-secret-policy/', views.save_secret_policy, name="save_secret_policy"),
     path('policy-engine/save-ui/', views.save_access_policy_ui, name="save_access_policy_ui"),
     path('policy-engine/save-document/', views.save_access_policy_document, name="save_access_policy_document"),
+    path('policy-engine/delete/<int:policy_id>/', views.delete_access_policy, name="delete_access_policy"),
     path('delete-environment/<int:env_id>/', views.delete_environment, name="delete_environment"),
     path('delete-folder/<int:folder_id>/', views.delete_folder, name="delete_folder"),
     path('delete-secret/<int:secret_id>/', views.delete_secret, name="delete_secret"),

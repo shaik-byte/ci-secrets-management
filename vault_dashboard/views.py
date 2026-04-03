@@ -504,6 +504,7 @@ def save_access_policy_ui(request):
     if not request.user.is_superuser:
         return HttpResponseForbidden("Only admin can manage policy engine access.")
 
+    policy_id = request.POST.get("policy_id")
     user_id = request.POST.get("user_id")
     environment_id = request.POST.get("environment_id") or None
     folder_id = request.POST.get("folder_id") or None
@@ -522,17 +523,38 @@ def save_access_policy_ui(request):
         messages.error(request, "Please enable at least one permission: read, write, or delete.")
         return redirect("vault_dashboard")
 
-    AccessPolicy.objects.update_or_create(
-        user=target_user,
-        environment=environment,
-        folder=folder,
-        secret=secret,
-        defaults={
-            "can_read": can_read,
-            "can_write": can_write,
-            "can_delete": can_delete,
-        },
-    )
+    defaults = {
+        "can_read": can_read,
+        "can_write": can_write,
+        "can_delete": can_delete,
+    }
+    if policy_id:
+        policy = AccessPolicy.objects.filter(id=policy_id).first()
+        if policy:
+            policy.user = target_user
+            policy.environment = environment
+            policy.folder = folder
+            policy.secret = secret
+            policy.can_read = can_read
+            policy.can_write = can_write
+            policy.can_delete = can_delete
+            policy.save(update_fields=["user", "environment", "folder", "secret", "can_read", "can_write", "can_delete", "updated_at"])
+        else:
+            AccessPolicy.objects.create(
+                user=target_user,
+                environment=environment,
+                folder=folder,
+                secret=secret,
+                **defaults,
+            )
+    else:
+        AccessPolicy.objects.update_or_create(
+            user=target_user,
+            environment=environment,
+            folder=folder,
+            secret=secret,
+            defaults=defaults,
+        )
 
     messages.success(request, f"Access policy updated for {target_user.username}.")
     return redirect("vault_dashboard")
@@ -591,6 +613,19 @@ def save_access_policy_document(request):
         created += 1
 
     messages.success(request, f"Policy document processed. Updated {created} rule(s).")
+    return redirect("vault_dashboard")
+
+
+@login_required
+def delete_access_policy(request, policy_id):
+    if request.method != "POST":
+        return HttpResponseForbidden("Invalid request method")
+    if not request.user.is_superuser:
+        return HttpResponseForbidden("Only admin can manage policy engine access.")
+
+    policy = get_object_or_404(AccessPolicy, id=policy_id)
+    policy.delete()
+    messages.success(request, "Access policy deleted successfully.")
     return redirect("vault_dashboard")
 
 

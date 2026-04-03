@@ -246,9 +246,10 @@
         <p class="text-muted mb-3">Grant read/write/delete permissions on environment, folder, or secret for a selected user.</p>
         <form method="POST" action="{% url 'save_access_policy_ui' %}" class="row g-2 align-items-end">
             {% csrf_token %}
+            <input type="hidden" name="policy_id" id="access-policy-id">
             <div class="col-md-3">
                 <label class="form-label">User</label>
-                <select class="form-select" name="user_id" required>
+                <select class="form-select" name="user_id" id="access-user-id" required>
                     <option value="">Select user</option>
                     {% for u in users %}
                     <option value="{{ u.id }}">{{ u.username }}</option>
@@ -257,7 +258,7 @@
             </div>
             <div class="col-md-3">
                 <label class="form-label">Environment (optional)</label>
-                <select class="form-select" name="environment_id">
+                <select class="form-select" name="environment_id" id="access-environment-id">
                     <option value="">Global / none</option>
                     {% for env in all_environments %}
                     <option value="{{ env.id }}">{{ env.name }}</option>
@@ -266,7 +267,7 @@
             </div>
             <div class="col-md-3">
                 <label class="form-label">Folder (optional)</label>
-                <select class="form-select" name="folder_id">
+                <select class="form-select" name="folder_id" id="access-folder-id">
                     <option value="">None</option>
                     {% for folder in all_folders %}
                     <option value="{{ folder.id }}">{{ folder.environment.name }} / {{ folder.name }}</option>
@@ -275,7 +276,7 @@
             </div>
             <div class="col-md-3">
                 <label class="form-label">Secret (optional)</label>
-                <select class="form-select" name="secret_id">
+                <select class="form-select" name="secret_id" id="access-secret-id">
                     <option value="">None</option>
                     {% for secret in all_secrets %}
                     <option value="{{ secret.id }}">{{ secret.folder.environment.name }} / {{ secret.folder.name }} / {{ secret.name }}</option>
@@ -302,6 +303,9 @@
             </div>
             <div class="col-md-6">
                 <button type="submit" class="btn btn-primary w-100">Save UI Access Policy</button>
+            </div>
+            <div class="col-md-2">
+                <button type="button" class="btn btn-outline-secondary w-100" onclick="resetAccessPolicyForm()">Clear</button>
             </div>
         </form>
     </div>
@@ -354,11 +358,21 @@
                         <th>Read</th>
                         <th>Write</th>
                         <th>Delete</th>
+                        <th>Action</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for access in access_policies %}
-                    <tr>
+                    <tr
+                        data-policy-id="{{ access.id }}"
+                        data-user-id="{{ access.user_id }}"
+                        data-environment-id="{{ access.environment_id|default:'' }}"
+                        data-folder-id="{{ access.folder_id|default:'' }}"
+                        data-secret-id="{{ access.secret_id|default:'' }}"
+                        data-can-read="{{ access.can_read|yesno:'1,0' }}"
+                        data-can-write="{{ access.can_write|yesno:'1,0' }}"
+                        data-can-delete="{{ access.can_delete|yesno:'1,0' }}"
+                    >
                         <td>{{ access.user.username }}</td>
                         <td>{{ access.environment.name|default:"*" }}</td>
                         <td>{{ access.folder.name|default:"*" }}</td>
@@ -366,9 +380,16 @@
                         <td>{% if access.can_read %}✅{% else %}—{% endif %}</td>
                         <td>{% if access.can_write %}✅{% else %}—{% endif %}</td>
                         <td>{% if access.can_delete %}✅{% else %}—{% endif %}</td>
+                        <td class="d-flex gap-2">
+                            <button type="button" class="btn btn-outline-primary btn-sm" onclick="editAccessPolicy(this)">Edit</button>
+                            <form method="POST" action="{% url 'delete_access_policy' access.id %}">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-outline-danger btn-sm">Delete</button>
+                            </form>
+                        </td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="7" class="text-center text-muted">No access rules yet.</td></tr>
+                    <tr><td colspan="8" class="text-center text-muted">No access rules yet.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
@@ -659,6 +680,52 @@ function applySelectedPolicyFilter() {
     regexInput.value = regex;
     modeSelect.value = mode || "match";
     if (desc) desc.innerText = description || "";
+}
+
+function resetAccessPolicyForm() {
+    const policyId = document.getElementById("access-policy-id");
+    const user = document.getElementById("access-user-id");
+    const env = document.getElementById("access-environment-id");
+    const folder = document.getElementById("access-folder-id");
+    const secret = document.getElementById("access-secret-id");
+    const read = document.getElementById("perm-read");
+    const write = document.getElementById("perm-write");
+    const del = document.getElementById("perm-delete");
+
+    if (policyId) policyId.value = "";
+    if (user) user.value = "";
+    if (env) env.value = "";
+    if (folder) folder.value = "";
+    if (secret) secret.value = "";
+    if (read) read.checked = false;
+    if (write) write.checked = false;
+    if (del) del.checked = false;
+}
+
+function editAccessPolicy(button) {
+    const row = button.closest("tr");
+    if (!row) return;
+
+    const policyId = document.getElementById("access-policy-id");
+    const user = document.getElementById("access-user-id");
+    const env = document.getElementById("access-environment-id");
+    const folder = document.getElementById("access-folder-id");
+    const secret = document.getElementById("access-secret-id");
+    const read = document.getElementById("perm-read");
+    const write = document.getElementById("perm-write");
+    const del = document.getElementById("perm-delete");
+
+    if (policyId) policyId.value = row.dataset.policyId || "";
+    if (user) user.value = row.dataset.userId || "";
+    if (env) env.value = row.dataset.environmentId || "";
+    if (folder) folder.value = row.dataset.folderId || "";
+    if (secret) secret.value = row.dataset.secretId || "";
+    if (read) read.checked = row.dataset.canRead === "1";
+    if (write) write.checked = row.dataset.canWrite === "1";
+    if (del) del.checked = row.dataset.canDelete === "1";
+
+    const policySection = document.getElementById("section-policy");
+    if (policySection) policySection.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function toggleSecret(id) {
