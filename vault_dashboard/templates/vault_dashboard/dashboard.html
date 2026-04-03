@@ -131,6 +131,11 @@
         <button id="nav-policy" class="sidebar-item" type="button" onclick="showSection('policy')">
             Policy Engine
         </button>
+        {% if request.user.is_superuser %}
+        <button id="nav-approvals" class="sidebar-item" type="button" onclick="showSection('approvals')">
+            Approvals
+        </button>
+        {% endif %}
     </aside>
 
     <main class="content-area">
@@ -792,6 +797,94 @@
     </div>
 </div>
 
+{% if request.user.is_superuser %}
+<div id="section-approvals" class="container mt-1" style="display:none;">
+    <div class="card p-4 mb-4 shadow-sm">
+        <h5 class="mb-2">Deletion Approvals</h5>
+        <p class="text-muted mb-3">Only root/super user can approve or reject pending delete requests from normal users.</p>
+        <div class="table-responsive">
+            <table class="table table-sm table-striped align-middle">
+                <thead class="table-dark">
+                    <tr>
+                        <th>ID</th>
+                        <th>Requested By</th>
+                        <th>Target</th>
+                        <th>Name</th>
+                        <th>Requested At</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for req in pending_deletion_approvals %}
+                    <tr>
+                        <td>#{{ req.id }}</td>
+                        <td>{{ req.requested_by.username }}</td>
+                        <td>{{ req.target_type|title }}</td>
+                        <td>{{ req.target_name }}</td>
+                        <td>{{ req.created_at }}</td>
+                        <td class="d-flex gap-2">
+                            <form method="POST" action="{% url 'approve_deletion_request' req.id %}">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-success btn-sm">Approve</button>
+                            </form>
+                            <form method="POST" action="{% url 'reject_deletion_request' req.id %}">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-outline-danger btn-sm">Reject</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="6" class="text-center text-muted">No pending deletion approvals.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card p-4 mb-4 shadow-sm">
+        <h5 class="mb-3">Recent Decisions</h5>
+        <div class="table-responsive">
+            <table class="table table-sm table-striped align-middle">
+                <thead class="table-dark">
+                    <tr>
+                        <th>ID</th>
+                        <th>Status</th>
+                        <th>Requested By</th>
+                        <th>Target</th>
+                        <th>Decided By</th>
+                        <th>Decided At</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for req in recent_deletion_approvals %}
+                    <tr>
+                        <td>#{{ req.id }}</td>
+                        <td>
+                            {% if req.status == "approved" %}
+                            <span class="badge bg-success">Approved</span>
+                            {% else %}
+                            <span class="badge bg-danger">Rejected</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ req.requested_by.username }}</td>
+                        <td>{{ req.target_type|title }} / {{ req.target_name }}</td>
+                        <td>{{ req.approver.username|default:"-" }}</td>
+                        <td>{{ req.decided_at|default:"-" }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="6" class="text-center text-muted">No processed requests yet.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <div id="section-secrets" class="container mt-1" style="display:none;">
     <!-- ADD ENVIRONMENT -->
     <div class="card p-4 mb-4 shadow-sm">
@@ -831,13 +924,19 @@
                             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                         </div>
                         <div class="modal-body">
+                            {% if request.user.is_superuser %}
                             Are you sure you want to delete <strong>{{ env.name }}</strong> ?
+                            {% else %}
+                            Submit delete request for <strong>{{ env.name }}</strong> to root/super user approval?
+                            {% endif %}
                         </div>
                         <div class="modal-footer">
                             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">No</button>
                             <form method="POST" action="{% url 'delete_environment' env.id %}">
                                 {% csrf_token %}
-                                <button type="submit" class="btn btn-danger">Yes, Delete</button>
+                                <button type="submit" class="btn btn-danger">
+                                    {% if request.user.is_superuser %}Yes, Delete{% else %}Send Approval Request{% endif %}
+                                </button>
                             </form>
                         </div>
                     </div>
@@ -890,13 +989,19 @@
                                             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                                         </div>
                                         <div class="modal-body">
+                                            {% if request.user.is_superuser %}
                                             Are you sure you want to delete <strong>{{ folder.name }}</strong> ?
+                                            {% else %}
+                                            Submit delete request for <strong>{{ folder.name }}</strong> to root/super user approval?
+                                            {% endif %}
                                         </div>
                                         <div class="modal-footer">
                                             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">No</button>
                                             <form method="POST" action="{% url 'delete_folder' folder.id %}">
                                                 {% csrf_token %}
-                                                <button type="submit" class="btn btn-danger">Yes, Delete</button>
+                                                <button type="submit" class="btn btn-danger">
+                                                    {% if request.user.is_superuser %}Yes, Delete{% else %}Send Approval Request{% endif %}
+                                                </button>
                                             </form>
                                         </div>
                                     </div>
@@ -989,13 +1094,19 @@
                                                             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                                                         </div>
                                                         <div class="modal-body">
+                                                            {% if request.user.is_superuser %}
                                                             Are you sure you want to delete <strong>{{ secret.name }}</strong> ?
+                                                            {% else %}
+                                                            Submit delete request for <strong>{{ secret.name }}</strong> to root/super user approval?
+                                                            {% endif %}
                                                         </div>
                                                         <div class="modal-footer">
                                                             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">No</button>
                                                             <form method="POST" action="{% url 'delete_secret' secret.id %}">
                                                                 {% csrf_token %}
-                                                                <button type="submit" class="btn btn-danger">Yes, Delete</button>
+                                                                <button type="submit" class="btn btn-danger">
+                                                                    {% if request.user.is_superuser %}Yes, Delete{% else %}Send Approval Request{% endif %}
+                                                                </button>
                                                             </form>
                                                         </div>
                                                     </div>
@@ -1031,12 +1142,13 @@
 
 <script>
 function showSection(section) {
-    const sections = ["secrets", "settings", "policy"];
+    const sections = ["secrets", "settings", "policy", "approvals"];
     const sectionTitles = {
         dashboard: "Dashboard",
         secrets: "Secrets Manager",
         settings: "Settings",
         policy: "Policy Engine",
+        approvals: "Approvals",
     };
 
     const welcome = document.getElementById("welcome-panel");

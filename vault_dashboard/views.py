@@ -140,6 +140,7 @@ from django.http import JsonResponse, HttpResponseForbidden
 from django.contrib.auth.models import User
 from django.core.cache import cache
 from django.db.models import Q
+from django.db import transaction
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from datetime import datetime, timedelta
@@ -166,6 +167,7 @@ from .models import (
     AppRole,
     JWTWorkloadIdentity,
     MachineSessionToken,
+    DeletionApprovalRequest,
 )
 from .utils import encrypt_value, decrypt_value
 
@@ -293,6 +295,8 @@ def dashboard(request):
         "jwt_identities": JWTWorkloadIdentity.objects.select_related("machine_policy").order_by("name"),
         "new_approle_secret": request.session.pop("new_approle_secret", None),
         "new_approle_role_name": request.session.pop("new_approle_role_name", None),
+        "pending_deletion_approvals": DeletionApprovalRequest.objects.select_related("requested_by").filter(status="pending")[:100] if request.user.is_superuser else [],
+        "recent_deletion_approvals": DeletionApprovalRequest.objects.select_related("requested_by", "approver").exclude(status="pending")[:100] if request.user.is_superuser else [],
     })
 
 
@@ -448,6 +452,38 @@ def toggle_secret_access(request, secret_id):
     return redirect("vault_dashboard")
 
 
+def _create_deletion_approval(request, target_type, target_obj, note=""):
+    existing = DeletionApprovalRequest.objects.filter(
+        target_type=target_type,
+        target_id=target_obj.id,
+        requested_by=request.user,
+        status="pending",
+    ).first()
+    if existing:
+        messages.info(request, f"Deletion approval is already pending for {target_type} '{target_obj}'.")
+        return existing
+
+    approval = DeletionApprovalRequest.objects.create(
+        target_type=target_type,
+        target_id=target_obj.id,
+        target_name=str(target_obj),
+        requested_by=request.user,
+        request_note=note or "",
+    )
+    messages.success(request, f"Deletion request submitted for approval: {target_type} '{target_obj}'.")
+    return approval
+
+
+def _resolve_delete_target(approval):
+    if approval.target_type == "environment":
+        return Environment.objects.filter(id=approval.target_id).first()
+    if approval.target_type == "folder":
+        return Folder.objects.filter(id=approval.target_id).first()
+    if approval.target_type == "secret":
+        return Secret.objects.filter(id=approval.target_id).first()
+    return None
+
+
 # =========================
 # DELETE ENVIRONMENT
 # =========================
@@ -458,6 +494,16 @@ def delete_environment(request, env_id):
         return HttpResponseForbidden("You do not have delete access to this environment.")
 
     if request.method == "POST":
+        if not request.user.is_superuser:
+            approval = _create_deletion_approval(request, "environment", env)
+            AuditLog.objects.create(
+                user=request.user,
+                action='UPDATE',
+                entity='Environment',
+                details=f"Requested deletion approval for environment '{env.name}' (request #{approval.id})",
+                ip_address=get_client_ip(request)
+            )
+            return redirect("vault_dashboard")
 
         AuditLog.objects.create(
             user=request.user,
@@ -482,6 +528,16 @@ def delete_folder(request, folder_id):
         return HttpResponseForbidden("You do not have delete access to this folder.")
 
     if request.method == "POST":
+        if not request.user.is_superuser:
+            approval = _create_deletion_approval(request, "folder", folder)
+            AuditLog.objects.create(
+                user=request.user,
+                action='UPDATE',
+                entity='Folder',
+                details=f"Requested deletion approval for folder '{folder.name}' (request #{approval.id})",
+                ip_address=get_client_ip(request)
+            )
+            return redirect("vault_dashboard")
 
         AuditLog.objects.create(
             user=request.user,
@@ -506,6 +562,16 @@ def delete_secret(request, secret_id):
         return HttpResponseForbidden("You do not have delete access to this secret.")
 
     if request.method == "POST":
+        if not request.user.is_superuser:
+            approval = _create_deletion_approval(request, "secret", secret)
+            AuditLog.objects.create(
+                user=request.user,
+                action='UPDATE',
+                entity='Secret',
+                details=f"Requested deletion approval for secret '{secret.name}' (request #{approval.id})",
+                ip_address=get_client_ip(request)
+            )
+            return redirect("vault_dashboard")
 
         AuditLog.objects.create(
             user=request.user,
@@ -517,6 +583,73 @@ def delete_secret(request, secret_id):
 
         secret.delete()
 
+    return redirect("vault_dashboard")
+
+
+@login_required
+def approve_deletion_request(request, approval_id):
+    if request.method != "POST":
+        return HttpResponseForbidden("Invalid request method")
+    if not request.user.is_superuser:
+        return HttpResponseForbidden("Only admin can approve deletion requests.")
+
+    approval = get_object_or_404(DeletionApprovalRequest, id=approval_id, status="pending")
+    target_obj = _resolve_delete_target(approval)
+
+    if not target_obj:
+        approval.status = "rejected"
+        approval.approver = request.user
+        approval.decision_note = "Target no longer exists."
+        approval.decided_at = timezone.now()
+        approval.save(update_fields=["status", "approver", "decision_note", "decided_at", "updated_at"])
+        messages.warning(request, f"Request #{approval.id} rejected because target no longer exists.")
+        return redirect("vault_dashboard")
+
+    with transaction.atomic():
+        approval.status = "approved"
+        approval.approver = request.user
+        approval.decision_note = "Approved by root user."
+        approval.decided_at = timezone.now()
+        approval.save(update_fields=["status", "approver", "decision_note", "decided_at", "updated_at"])
+
+        target_name = str(target_obj)
+        target_obj.delete()
+
+        AuditLog.objects.create(
+            user=request.user,
+            action='DELETE',
+            entity=approval.target_type.capitalize(),
+            details=f"Approved request #{approval.id} and deleted '{target_name}' requested by '{approval.requested_by.username}'",
+            ip_address=get_client_ip(request)
+        )
+
+    messages.success(request, f"Approved request #{approval.id}. Deletion executed.")
+    return redirect("vault_dashboard")
+
+
+@login_required
+def reject_deletion_request(request, approval_id):
+    if request.method != "POST":
+        return HttpResponseForbidden("Invalid request method")
+    if not request.user.is_superuser:
+        return HttpResponseForbidden("Only admin can reject deletion requests.")
+
+    approval = get_object_or_404(DeletionApprovalRequest, id=approval_id, status="pending")
+    approval.status = "rejected"
+    approval.approver = request.user
+    approval.decision_note = "Rejected by root user."
+    approval.decided_at = timezone.now()
+    approval.save(update_fields=["status", "approver", "decision_note", "decided_at", "updated_at"])
+
+    AuditLog.objects.create(
+        user=request.user,
+        action='UPDATE',
+        entity=approval.target_type.capitalize(),
+        details=f"Rejected deletion request #{approval.id} for '{approval.target_name}' from '{approval.requested_by.username}'",
+        ip_address=get_client_ip(request)
+    )
+
+    messages.info(request, f"Rejected request #{approval.id}.")
     return redirect("vault_dashboard")
 
 

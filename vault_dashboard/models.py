@@ -204,3 +204,34 @@ class MachineSessionToken(models.Model):
 
     def __str__(self):
         return f"MachineSession<{self.machine_policy.name}>"
+
+
+class DeletionApprovalRequest(models.Model):
+    TARGET_CHOICES = [
+        ("environment", "Environment"),
+        ("folder", "Folder"),
+        ("secret", "Secret"),
+    ]
+    STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("approved", "Approved"),
+        ("rejected", "Rejected"),
+    ]
+
+    target_type = models.CharField(max_length=20, choices=TARGET_CHOICES)
+    target_id = models.PositiveIntegerField()
+    target_name = models.CharField(max_length=255)
+    requested_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name="deletion_requests")
+    approver = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="processed_deletion_requests")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+    request_note = models.CharField(max_length=300, blank=True, default="")
+    decision_note = models.CharField(max_length=300, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    decided_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.target_type}:{self.target_name} ({self.status})"
