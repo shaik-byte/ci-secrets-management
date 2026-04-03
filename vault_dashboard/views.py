@@ -144,7 +144,16 @@ import json
 import re
 import yaml
 
-from .models import Environment, Folder, Secret, SecretPolicy, AccessPolicy
+from .models import (
+    Environment,
+    Folder,
+    Secret,
+    SecretPolicy,
+    AccessPolicy,
+    PolicyGroup,
+    PolicyGroupMembership,
+    PolicyGroupPolicy,
+)
 from .utils import encrypt_value, decrypt_value
 
 from auditlogs.models import AuditLog
@@ -170,7 +179,10 @@ def _has_access(user, action, environment=None, folder=None, secret=None):
         return True
 
     action_field = _action_field(action)
-    filters = Q(user=user)
+    group_policy_ids = PolicyGroupPolicy.objects.filter(
+        group__memberships__user=user
+    ).values_list("policy_id", flat=True)
+    filters = Q(user=user) | Q(id__in=group_policy_ids)
     filters &= Q(**{action_field: True})
 
     scope = (
@@ -235,15 +247,31 @@ def dashboard(request):
         },
     ]
 
+    users = User.objects.order_by("username")
+    all_secrets = Secret.objects.select_related("folder", "folder__environment").order_by("name")
+    effective_access_rows = []
+    for user in users:
+        readable = []
+        for s in all_secrets:
+            if _has_access(user, "read", secret=s):
+                readable.append(f"{s.folder.environment.name}/{s.folder.name}/{s.name}")
+        effective_access_rows.append({
+            "user": user,
+            "readable_secrets": readable[:15],
+            "extra_count": max(len(readable) - 15, 0),
+        })
+
     return render(request, "vault_dashboard/dashboard.html", {
         "environments": environments,
         "secret_policy": policy,
         "policy_presets": policy_presets,
-        "users": User.objects.order_by("username"),
+        "users": users,
         "all_environments": Environment.objects.order_by("name"),
         "all_folders": Folder.objects.select_related("environment").order_by("name"),
-        "all_secrets": Secret.objects.select_related("folder", "folder__environment").order_by("name"),
+        "all_secrets": all_secrets,
         "access_policies": AccessPolicy.objects.select_related("user", "environment", "folder", "secret").order_by("-updated_at")[:100],
+        "policy_groups": PolicyGroup.objects.select_related("created_by").prefetch_related("memberships__user", "policy_links__policy").order_by("name"),
+        "effective_access_rows": effective_access_rows,
     })
 
 
@@ -626,6 +654,83 @@ def delete_access_policy(request, policy_id):
     policy = get_object_or_404(AccessPolicy, id=policy_id)
     policy.delete()
     messages.success(request, "Access policy deleted successfully.")
+    return redirect("vault_dashboard")
+
+
+@login_required
+def create_policy_group(request):
+    if request.method != "POST":
+        return HttpResponseForbidden("Invalid request method")
+    if not request.user.is_superuser:
+        return HttpResponseForbidden("Only admin can manage policy groups.")
+
+    name = (request.POST.get("name") or "").strip()
+    description = (request.POST.get("description") or "").strip()
+    if not name:
+        messages.error(request, "Group name is required.")
+        return redirect("vault_dashboard")
+
+    PolicyGroup.objects.update_or_create(
+        name=name,
+        defaults={"description": description, "created_by": request.user},
+    )
+    messages.success(request, f"Policy group '{name}' saved.")
+    return redirect("vault_dashboard")
+
+
+@login_required
+def add_user_to_policy_group(request):
+    if request.method != "POST":
+        return HttpResponseForbidden("Invalid request method")
+    if not request.user.is_superuser:
+        return HttpResponseForbidden("Only admin can manage policy groups.")
+
+    group = get_object_or_404(PolicyGroup, id=request.POST.get("group_id"))
+    user = get_object_or_404(User, id=request.POST.get("user_id"))
+    PolicyGroupMembership.objects.get_or_create(group=group, user=user)
+    messages.success(request, f"Added {user.username} to group {group.name}.")
+    return redirect("vault_dashboard")
+
+
+@login_required
+def remove_user_from_policy_group(request):
+    if request.method != "POST":
+        return HttpResponseForbidden("Invalid request method")
+    if not request.user.is_superuser:
+        return HttpResponseForbidden("Only admin can manage policy groups.")
+
+    group = get_object_or_404(PolicyGroup, id=request.POST.get("group_id"))
+    user = get_object_or_404(User, id=request.POST.get("user_id"))
+    PolicyGroupMembership.objects.filter(group=group, user=user).delete()
+    messages.success(request, f"Removed {user.username} from group {group.name}.")
+    return redirect("vault_dashboard")
+
+
+@login_required
+def attach_policy_to_group(request):
+    if request.method != "POST":
+        return HttpResponseForbidden("Invalid request method")
+    if not request.user.is_superuser:
+        return HttpResponseForbidden("Only admin can manage policy groups.")
+
+    group = get_object_or_404(PolicyGroup, id=request.POST.get("group_id"))
+    policy = get_object_or_404(AccessPolicy, id=request.POST.get("policy_id"))
+    PolicyGroupPolicy.objects.get_or_create(group=group, policy=policy)
+    messages.success(request, f"Attached policy #{policy.id} to group {group.name}.")
+    return redirect("vault_dashboard")
+
+
+@login_required
+def detach_policy_from_group(request):
+    if request.method != "POST":
+        return HttpResponseForbidden("Invalid request method")
+    if not request.user.is_superuser:
+        return HttpResponseForbidden("Only admin can manage policy groups.")
+
+    group = get_object_or_404(PolicyGroup, id=request.POST.get("group_id"))
+    policy = get_object_or_404(AccessPolicy, id=request.POST.get("policy_id"))
+    PolicyGroupPolicy.objects.filter(group=group, policy=policy).delete()
+    messages.success(request, f"Detached policy #{policy.id} from group {group.name}.")
     return redirect("vault_dashboard")
 
 

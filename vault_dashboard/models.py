@@ -108,3 +108,38 @@ class AccessPolicy(models.Model):
         elif self.environment_id:
             scope = f"environment:{self.environment_id}"
         return f"{self.user.username} [{scope}]"
+
+
+class PolicyGroup(models.Model):
+    name = models.CharField(max_length=120, unique=True)
+    description = models.CharField(max_length=300, blank=True, default="")
+    created_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name="created_policy_groups")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.name
+
+
+class PolicyGroupMembership(models.Model):
+    group = models.ForeignKey(PolicyGroup, on_delete=models.CASCADE, related_name="memberships")
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="policy_group_memberships")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("group", "user")
+
+    def __str__(self):
+        return f"{self.group.name} -> {self.user.username}"
+
+
+class PolicyGroupPolicy(models.Model):
+    group = models.ForeignKey(PolicyGroup, on_delete=models.CASCADE, related_name="policy_links")
+    policy = models.ForeignKey(AccessPolicy, on_delete=models.CASCADE, related_name="group_links")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("group", "policy")
+
+    def __str__(self):
+        return f"{self.group.name} -> policy:{self.policy_id}"

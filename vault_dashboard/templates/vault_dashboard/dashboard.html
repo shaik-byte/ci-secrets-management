@@ -357,6 +357,210 @@
             </table>
         </div>
     </div>
+
+    <div class="card p-4 mb-4 shadow-sm">
+        <h5 class="mb-3">Policy Groups (RBAC)</h5>
+        <p class="text-muted mb-3">Create groups, attach policies, and manage members for role-based access control.</p>
+        <form method="POST" action="{% url 'create_policy_group' %}" class="row g-2 align-items-end">
+            {% csrf_token %}
+            <div class="col-md-4">
+                <label class="form-label">Group Name</label>
+                <input type="text" name="name" class="form-control" placeholder="e.g. DevOps-ReadOnly" required>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Description</label>
+                <input type="text" name="description" class="form-control" placeholder="Purpose of this access group">
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary w-100">Save Group</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="card p-4 mb-4 shadow-sm">
+        <h5 class="mb-3">Group Membership Management</h5>
+        <div class="row g-3">
+            <div class="col-md-6">
+                <form method="POST" action="{% url 'add_user_to_policy_group' %}" class="row g-2 align-items-end">
+                    {% csrf_token %}
+                    <div class="col-md-6">
+                        <label class="form-label">Group</label>
+                        <select class="form-select" name="group_id" required>
+                            <option value="">Select group</option>
+                            {% for g in policy_groups %}
+                            <option value="{{ g.id }}">{{ g.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">User</label>
+                        <select class="form-select" name="user_id" required>
+                            <option value="">Select user</option>
+                            {% for u in users %}
+                            <option value="{{ u.id }}">{{ u.username }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-12">
+                        <button type="submit" class="btn btn-outline-primary w-100">Add User to Group</button>
+                    </div>
+                </form>
+            </div>
+            <div class="col-md-6">
+                <form method="POST" action="{% url 'remove_user_from_policy_group' %}" class="row g-2 align-items-end">
+                    {% csrf_token %}
+                    <div class="col-md-6">
+                        <label class="form-label">Group</label>
+                        <select class="form-select" name="group_id" required>
+                            <option value="">Select group</option>
+                            {% for g in policy_groups %}
+                            <option value="{{ g.id }}">{{ g.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">User</label>
+                        <select class="form-select" name="user_id" required>
+                            <option value="">Select user</option>
+                            {% for u in users %}
+                            <option value="{{ u.id }}">{{ u.username }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-12">
+                        <button type="submit" class="btn btn-outline-danger w-100">Remove User from Group</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="card p-4 mb-4 shadow-sm">
+        <h5 class="mb-3">Group Policy Attachments</h5>
+        <div class="row g-3">
+            <div class="col-md-6">
+                <form method="POST" action="{% url 'attach_policy_to_group' %}" class="row g-2 align-items-end">
+                    {% csrf_token %}
+                    <div class="col-md-6">
+                        <label class="form-label">Group</label>
+                        <select class="form-select" name="group_id" required>
+                            <option value="">Select group</option>
+                            {% for g in policy_groups %}
+                            <option value="{{ g.id }}">{{ g.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Access Policy</label>
+                        <select class="form-select" name="policy_id" required>
+                            <option value="">Select policy</option>
+                            {% for p in access_policies %}
+                            <option value="{{ p.id }}">#{{ p.id }} - {{ p.user.username }}{% if p.environment %} / {{ p.environment.name }}{% endif %}{% if p.folder %} / {{ p.folder.name }}{% endif %}{% if p.secret %} / {{ p.secret.name }}{% endif %}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-12">
+                        <button type="submit" class="btn btn-outline-primary w-100">Attach Policy to Group</button>
+                    </div>
+                </form>
+            </div>
+            <div class="col-md-6">
+                <form method="POST" action="{% url 'detach_policy_from_group' %}" class="row g-2 align-items-end">
+                    {% csrf_token %}
+                    <div class="col-md-6">
+                        <label class="form-label">Group</label>
+                        <select class="form-select" name="group_id" required>
+                            <option value="">Select group</option>
+                            {% for g in policy_groups %}
+                            <option value="{{ g.id }}">{{ g.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Access Policy</label>
+                        <select class="form-select" name="policy_id" required>
+                            <option value="">Select policy</option>
+                            {% for p in access_policies %}
+                            <option value="{{ p.id }}">#{{ p.id }} - {{ p.user.username }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-12">
+                        <button type="submit" class="btn btn-outline-danger w-100">Detach Policy from Group</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="card p-4 mb-4 shadow-sm">
+        <h5 class="mb-3">Group Summary</h5>
+        <div class="table-responsive">
+            <table class="table table-sm table-striped align-middle">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Group</th>
+                        <th>Members</th>
+                        <th>Attached Policies</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for g in policy_groups %}
+                    <tr>
+                        <td>{{ g.name }}</td>
+                        <td>
+                            {% for m in g.memberships.all %}
+                                <span class="badge bg-secondary me-1">{{ m.user.username }}</span>
+                            {% empty %}
+                                <span class="text-muted">No members</span>
+                            {% endfor %}
+                        </td>
+                        <td>
+                            {% for l in g.policy_links.all %}
+                                <span class="badge bg-info text-dark me-1">Policy #{{ l.policy_id }}</span>
+                            {% empty %}
+                                <span class="text-muted">No policies</span>
+                            {% endfor %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="3" class="text-center text-muted">No policy groups created yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card p-4 mb-4 shadow-sm">
+        <h5 class="mb-3">Effective User Secret Access (Read)</h5>
+        <div class="table-responsive">
+            <table class="table table-sm table-striped align-middle">
+                <thead class="table-dark">
+                    <tr>
+                        <th>User</th>
+                        <th>Readable Secrets (resolved from direct + group policies)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in effective_access_rows %}
+                    <tr>
+                        <td>{{ row.user.username }}</td>
+                        <td>
+                            {% for item in row.readable_secrets %}
+                                <span class="badge bg-light text-dark border me-1 mb-1">{{ item }}</span>
+                            {% empty %}
+                                <span class="text-muted">No readable secrets</span>
+                            {% endfor %}
+                            {% if row.extra_count > 0 %}
+                                <span class="badge bg-secondary">+{{ row.extra_count }} more</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
 </div>
 
 <div id="section-secrets" class="container mt-1" style="display:none;">
