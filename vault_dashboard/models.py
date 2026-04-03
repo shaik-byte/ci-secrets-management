@@ -87,3 +87,24 @@ class SecretPolicy(models.Model):
     def __str__(self):
         return f"Secret Policy - {self.created_by.username}"
 
+
+class AccessPolicy(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="vault_access_policies")
+    environment = models.ForeignKey(Environment, on_delete=models.CASCADE, null=True, blank=True, related_name="access_policies")
+    folder = models.ForeignKey(Folder, on_delete=models.CASCADE, null=True, blank=True, related_name="access_policies")
+    secret = models.ForeignKey(Secret, on_delete=models.CASCADE, null=True, blank=True, related_name="access_policies")
+    can_read = models.BooleanField(default=False)
+    can_write = models.BooleanField(default=False)
+    can_delete = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        scope = "global"
+        if self.secret_id:
+            scope = f"secret:{self.secret_id}"
+        elif self.folder_id:
+            scope = f"folder:{self.folder_id}"
+        elif self.environment_id:
+            scope = f"environment:{self.environment_id}"
+        return f"{self.user.username} [{scope}]"

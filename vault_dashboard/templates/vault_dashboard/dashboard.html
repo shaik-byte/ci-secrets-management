@@ -240,6 +240,140 @@
             </div>
         </form>
     </div>
+
+    <div class="card p-4 mb-4 shadow-sm">
+        <h5 class="mb-3">User Access Control (UI)</h5>
+        <p class="text-muted mb-3">Grant read/write/delete permissions on environment, folder, or secret for a selected user.</p>
+        <form method="POST" action="{% url 'save_access_policy_ui' %}" class="row g-2 align-items-end">
+            {% csrf_token %}
+            <div class="col-md-3">
+                <label class="form-label">User</label>
+                <select class="form-select" name="user_id" required>
+                    <option value="">Select user</option>
+                    {% for u in users %}
+                    <option value="{{ u.id }}">{{ u.username }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Environment (optional)</label>
+                <select class="form-select" name="environment_id">
+                    <option value="">Global / none</option>
+                    {% for env in all_environments %}
+                    <option value="{{ env.id }}">{{ env.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Folder (optional)</label>
+                <select class="form-select" name="folder_id">
+                    <option value="">None</option>
+                    {% for folder in all_folders %}
+                    <option value="{{ folder.id }}">{{ folder.environment.name }} / {{ folder.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Secret (optional)</label>
+                <select class="form-select" name="secret_id">
+                    <option value="">None</option>
+                    {% for secret in all_secrets %}
+                    <option value="{{ secret.id }}">{{ secret.folder.environment.name }} / {{ secret.folder.name }} / {{ secret.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="can_read" id="perm-read">
+                    <label class="form-check-label" for="perm-read">Read</label>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="can_write" id="perm-write">
+                    <label class="form-check-label" for="perm-write">Write</label>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="can_delete" id="perm-delete">
+                    <label class="form-check-label" for="perm-delete">Delete</label>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <button type="submit" class="btn btn-primary w-100">Save UI Access Policy</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="card p-4 mb-4 shadow-sm">
+        <h5 class="mb-3">Manual Access Policy (JSON / YAML)</h5>
+        <p class="text-muted mb-2">Paste policy document with top-level <code>rules</code> list.</p>
+        <pre class="bg-light p-2 rounded small text-dark mb-3">{
+  "rules": [
+    {
+      "user": "alice",
+      "environment": "prod",
+      "folder": "payments",
+      "secret": "STRIPE_API_KEY",
+      "permissions": { "read": true, "write": false, "delete": false }
+    }
+  ]
+}</pre>
+        <form method="POST" action="{% url 'save_access_policy_document' %}">
+            {% csrf_token %}
+            <div class="row g-2 align-items-end">
+                <div class="col-md-3">
+                    <label class="form-label">Format</label>
+                    <select name="document_format" class="form-select">
+                        <option value="json">JSON</option>
+                        <option value="yaml">YAML</option>
+                    </select>
+                </div>
+                <div class="col-md-9">
+                    <label class="form-label">Policy Document</label>
+                    <textarea name="policy_document" class="form-control" rows="8" placeholder="Paste JSON or YAML policy document"></textarea>
+                </div>
+                <div class="col-md-12">
+                    <button type="submit" class="btn btn-outline-primary w-100">Save Manual Policy Document</button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <div class="card p-4 mb-4 shadow-sm">
+        <h5 class="mb-3">Recent Access Rules</h5>
+        <div class="table-responsive">
+            <table class="table table-sm table-striped align-middle">
+                <thead class="table-dark">
+                    <tr>
+                        <th>User</th>
+                        <th>Environment</th>
+                        <th>Folder</th>
+                        <th>Secret</th>
+                        <th>Read</th>
+                        <th>Write</th>
+                        <th>Delete</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for access in access_policies %}
+                    <tr>
+                        <td>{{ access.user.username }}</td>
+                        <td>{{ access.environment.name|default:"*" }}</td>
+                        <td>{{ access.folder.name|default:"*" }}</td>
+                        <td>{{ access.secret.name|default:"*" }}</td>
+                        <td>{% if access.can_read %}✅{% else %}—{% endif %}</td>
+                        <td>{% if access.can_write %}✅{% else %}—{% endif %}</td>
+                        <td>{% if access.can_delete %}✅{% else %}—{% endif %}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="7" class="text-center text-muted">No access rules yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
 </div>
 
 <div id="section-secrets" class="container mt-1" style="display:none;">
