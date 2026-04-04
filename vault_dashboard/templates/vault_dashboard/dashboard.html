@@ -1378,20 +1378,17 @@ document.addEventListener("DOMContentLoaded", function () {
     syncState();
 });
 
-function isSecretsAjaxForm(form) {
-    if (!form || !form.action) return false;
-    const action = form.action;
-    const managedActions = [
-        "add-environment",
-        "add-folder",
-        "add-secret",
-        "delete-environment",
-        "delete-folder",
-        "delete-secret",
-        "toggle-delete-approval",
-        "toggle-secret-access",
-    ];
-    return managedActions.some((fragment) => action.includes(fragment));
+function isAjaxManagedForm(form) {
+    if (!form) return false;
+    const method = (form.method || "GET").toUpperCase();
+    if (method !== "POST") return false;
+    if (form.dataset.noAjax === "true") return false;
+
+    const actionUrl = new URL(form.action || window.location.href, window.location.href);
+    if (actionUrl.origin !== window.location.origin) return false;
+    if (actionUrl.pathname.includes("/logout")) return false;
+
+    return true;
 }
 
 async function refreshContentArea(sectionName = "secrets") {
@@ -1411,10 +1408,11 @@ async function refreshContentArea(sectionName = "secrets") {
 
 document.addEventListener("submit", async function (event) {
     const form = event.target;
-    if (!isSecretsAjaxForm(form)) return;
+    if (!isAjaxManagedForm(form)) return;
 
     event.preventDefault();
     const formData = new FormData(form);
+    const activeSection = localStorage.getItem("vault_active_section") || "dashboard";
 
     try {
         await fetch(form.action, {
@@ -1424,7 +1422,7 @@ document.addEventListener("submit", async function (event) {
             credentials: "same-origin",
             redirect: "follow",
         });
-        await refreshContentArea("secrets");
+        await refreshContentArea(activeSection);
     } catch (error) {
         console.error("Action failed:", error);
         window.alert("Something went wrong while saving. Please try again.");
