@@ -169,6 +169,7 @@ from .models import (
     MachineSessionToken,
     DeletionApprovalRequest,
     UserFeatureAccess,
+    EnvironmentSecretPolicy,
 )
 from .utils import encrypt_value, decrypt_value
 from .feature_access import FEATURE_CATALOG, FEATURE_DEFAULTS, resolve_user_feature_visibility, user_has_feature
@@ -219,6 +220,17 @@ def _has_access(user, action, environment=None, folder=None, secret=None):
         scope |= Q(environment=secret.folder.environment, folder__isnull=True, secret__isnull=True)
 
     return AccessPolicy.objects.filter(filters & scope).exists()
+
+
+def _manageable_environments_for_settings(user):
+    if user.is_superuser:
+        return Environment.objects.all()
+
+    writable_ids = []
+    for env in Environment.objects.all():
+        if _has_access(user, "write", environment=env):
+            writable_ids.append(env.id)
+    return Environment.objects.filter(id__in=writable_ids)
 
 
 @login_required
@@ -295,6 +307,13 @@ def dashboard(request):
             feature_rows.append({"user": target_user, "features": row})
 
     all_secrets = Secret.objects.select_related("folder", "folder__environment").order_by("name")
+    env_policy_map = {
+        p.environment_id: p for p in EnvironmentSecretPolicy.objects.select_related("environment")
+    }
+    for env in environments:
+        env.secret_value_regex = env_policy_map.get(env.id).secret_value_regex if env.id in env_policy_map else policy.secret_value_regex
+        env.regex_mode = env_policy_map.get(env.id).regex_mode if env.id in env_policy_map else policy.regex_mode
+
     effective_access_rows = []
     for user in users:
         readable = []
@@ -334,6 +353,7 @@ def dashboard(request):
         "can_view_audit_logs": "audit_logs" in visible_feature_keys,
         "can_view_seal_vault": "seal_vault" in visible_feature_keys,
         "feature_rows": feature_rows,
+        "setting_environments": _manageable_environments_for_settings(request.user).order_by("name"),
     })
 
 
@@ -399,7 +419,9 @@ def add_secret(request, folder_id):
         value = request.POST.get("value")
         expire = request.POST.get("expire")
 
-        policy = SecretPolicy.objects.filter(created_by=request.user).first()
+        fallback_policy = SecretPolicy.objects.filter(created_by=request.user).first()
+        env_policy = EnvironmentSecretPolicy.objects.filter(environment=folder.environment).first()
+        policy = env_policy if (env_policy and env_policy.secret_value_regex) else fallback_policy
         regex_pattern = policy.secret_value_regex.strip() if policy else ""
         regex_mode = policy.regex_mode if policy else "match"
 
@@ -725,6 +747,8 @@ def save_secret_policy(request):
     if request.method == "POST":
         pattern = (request.POST.get("secret_value_regex") or "").strip()
         regex_mode = (request.POST.get("regex_mode") or "match").strip()
+        apply_all = bool(request.POST.get("apply_all_environments"))
+        selected_env_ids = request.POST.getlist("environment_ids")
 
         if regex_mode not in {"match", "not_match"}:
             regex_mode = "match"
@@ -741,7 +765,27 @@ def save_secret_policy(request):
         policy.regex_mode = regex_mode
         policy.save(update_fields=["secret_value_regex", "regex_mode", "updated_at"])
 
-        messages.success(request, "Secret regex policy saved successfully.")
+        manageable_envs = _manageable_environments_for_settings(request.user)
+        if apply_all:
+            target_envs = manageable_envs
+        else:
+            target_envs = manageable_envs.filter(id__in=selected_env_ids)
+            if not target_envs.exists():
+                messages.error(request, "Select at least one environment or choose Apply All Environments.")
+                return redirect("vault_dashboard")
+
+        with transaction.atomic():
+            for env in target_envs:
+                EnvironmentSecretPolicy.objects.update_or_create(
+                    environment=env,
+                    defaults={
+                        "secret_value_regex": pattern,
+                        "regex_mode": regex_mode,
+                        "updated_by": request.user,
+                    },
+                )
+
+        messages.success(request, f"Secret regex policy applied to {target_envs.count()} environment(s).")
 
     return redirect("vault_dashboard")
 

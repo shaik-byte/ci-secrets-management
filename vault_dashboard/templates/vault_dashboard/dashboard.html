@@ -249,6 +249,19 @@
                     <option value="not_match" {% if secret_policy.regex_mode == 'not_match' %}selected{% endif %}>Should Not Match</option>
                 </select>
             </div>
+            <div class="col-md-3 form-check mt-4">
+                <input class="form-check-input" type="checkbox" id="apply-all-environments" name="apply_all_environments">
+                <label class="form-check-label" for="apply-all-environments">Apply All Environments</label>
+            </div>
+            <div class="col-md-12">
+                <label class="form-label">Or select environments</label>
+                <select name="environment_ids" id="environment-select" class="form-select" multiple size="5">
+                    {% for env in setting_environments %}
+                    <option value="{{ env.id }}">{{ env.name }}</option>
+                    {% endfor %}
+                </select>
+                <small class="text-muted">Tip: Hold Ctrl/Cmd to select multiple environments.</small>
+            </div>
             <div class="col-md-3">
                 <button type="submit" class="btn btn-primary w-100">Save Regex</button>
             </div>
@@ -1150,8 +1163,8 @@
                                     <form method="POST"
                                           action="{% url 'add_secret' folder.id %}"
                                           class="row g-2 mb-3 secret-form"
-                                          data-secret-regex="{{ secret_policy.secret_value_regex|escapejs }}"
-                                          data-regex-mode="{{ secret_policy.regex_mode|default:'match' }}">
+                                          data-secret-regex="{{ env.secret_value_regex|default:''|escapejs }}"
+                                          data-regex-mode="{{ env.regex_mode|default:'match' }}">
                                         {% csrf_token %}
                                         <div class="col-md-2">
                                             <input type="text" name="name" class="form-control" placeholder="Secret Name" required>
@@ -1323,6 +1336,18 @@ function showSection(section) {
         pageTitle.innerText = sectionTitles[normalizedSection] || "Dashboard";
     }
 }
+
+document.addEventListener("DOMContentLoaded", function () {
+    const applyAllCheckbox = document.getElementById("apply-all-environments");
+    const envSelect = document.getElementById("environment-select");
+    if (!applyAllCheckbox || !envSelect) return;
+
+    const syncState = () => {
+        envSelect.disabled = applyAllCheckbox.checked;
+    };
+    applyAllCheckbox.addEventListener("change", syncState);
+    syncState();
+});
 
 function resetAccessPolicyForm() {
     const policyId = document.getElementById("access-policy-id");

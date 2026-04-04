@@ -252,3 +252,19 @@ class UserFeatureAccess(models.Model):
 
     def __str__(self):
         return f"{self.user.username}:{self.feature_key}={self.can_view}"
+
+
+class EnvironmentSecretPolicy(models.Model):
+    MATCH_MODE_CHOICES = [
+        ("match", "Should Match"),
+        ("not_match", "Should Not Match"),
+    ]
+
+    environment = models.OneToOneField(Environment, on_delete=models.CASCADE, related_name="secret_policy")
+    secret_value_regex = models.CharField(max_length=500, blank=True, default="")
+    regex_mode = models.CharField(max_length=20, choices=MATCH_MODE_CHOICES, default="match")
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="updated_environment_secret_policies")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Env Policy - {self.environment.name}"
