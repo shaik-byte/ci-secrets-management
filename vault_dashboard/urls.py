@@ -1,20 +1,31 @@
 from django.urls import path
 from . import views
 
-# urlpatterns = [
-#     path('', views.dashboard, name="dashboard"),
-#     path('add-environment/', views.add_environment, name="add_environment"),
-#     path('add-folder/<int:env_id>/', views.add_folder, name="add_folder"),
-#     path('add-secret/<int:folder_id>/', views.add_secret, name="add_secret"),
-#     path('reveal-secret/<int:secret_id>/', views.reveal_secret, name="reveal_secret"),
-# ]
-
 urlpatterns = [
     path('', views.dashboard, name="vault_dashboard"),
     path('add-environment/', views.add_environment, name="add_environment"),
     path('add-folder/<int:env_id>/', views.add_folder, name="add_folder"),
     path('add-secret/<int:folder_id>/', views.add_secret, name="add_secret"),
     path('reveal-secret/<int:secret_id>/', views.reveal_secret, name="reveal_secret"),
+    path('toggle-secret-access/<int:secret_id>/', views.toggle_secret_access, name="toggle_secret_access"),
+    path('settings/save-secret-policy/', views.save_secret_policy, name="save_secret_policy"),
+    path('policy-engine/save-ui/', views.save_access_policy_ui, name="save_access_policy_ui"),
+    path('policy-engine/save-document/', views.save_access_policy_document, name="save_access_policy_document"),
+    path('policy-engine/delete/<int:policy_id>/', views.delete_access_policy, name="delete_access_policy"),
+    path('policy-engine/groups/create/', views.create_policy_group, name="create_policy_group"),
+    path('policy-engine/groups/add-user/', views.add_user_to_policy_group, name="add_user_to_policy_group"),
+    path('policy-engine/groups/remove-user/', views.remove_user_from_policy_group, name="remove_user_from_policy_group"),
+    path('policy-engine/groups/attach-policy/', views.attach_policy_to_group, name="attach_policy_to_group"),
+    path('policy-engine/groups/detach-policy/', views.detach_policy_from_group, name="detach_policy_from_group"),
+    path('policy-engine/groups/save-document/', views.save_policy_groups_document, name="save_policy_groups_document"),
+    path('policy-engine/machine/save-policy/', views.save_machine_policy, name="save_machine_policy"),
+    path('policy-engine/machine/save-approle/', views.save_approle, name="save_approle"),
+    path('policy-engine/machine/save-jwt/', views.save_jwt_workload_identity, name="save_jwt_workload_identity"),
+    path('policy-engine/machine/save-document/', views.save_machine_auth_document, name="save_machine_auth_document"),
+    path('policy-engine/machine/jwt/login/', views.jwt_machine_login, name="jwt_machine_login"),
+    path('approvals/<int:approval_id>/approve/', views.approve_deletion_request, name="approve_deletion_request"),
+    path('approvals/<int:approval_id>/reject/', views.reject_deletion_request, name="reject_deletion_request"),
+    path('environment/<int:env_id>/toggle-delete-approval/', views.toggle_environment_delete_approval, name="toggle_environment_delete_approval"),
     path('delete-environment/<int:env_id>/', views.delete_environment, name="delete_environment"),
     path('delete-folder/<int:folder_id>/', views.delete_folder, name="delete_folder"),
     path('delete-secret/<int:secret_id>/', views.delete_secret, name="delete_secret"),

@@ -6,27 +6,149 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
 
     <style>
-        body { background-color: #f4f6f9; }
-        .card { border-radius: 12px; }
+        body {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 40%, #111827 100%);
+            min-height: 100vh;
+            color: #e2e8f0;
+        }
+
+        .container {
+            padding-top: 8px;
+            padding-bottom: 24px;
+        }
+
+        h2 {
+            color: #f8fafc;
+            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+        }
+
+        .card,
+        .accordion-item,
+        .modal-content {
+            border-radius: 14px;
+            background: rgba(255, 255, 255, 0.95);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+            color: #0f172a;
+        }
+
+        .accordion-button {
+            background-color: rgba(248, 250, 252, 0.9);
+            color: #0f172a;
+        }
+
+        .accordion-button:not(.collapsed) {
+            background: linear-gradient(90deg, #dbeafe, #e0e7ff);
+            color: #1e3a8a;
+        }
+
         .secret-value { font-family: monospace; }
-        #timer { font-weight: bold; font-size: 14px; }
         .env-header { font-size: 1.25rem; font-weight: 700; }
         .accordion-button:focus { box-shadow: none; }
+
+        .table-dark {
+            --bs-table-bg: #1e293b;
+            --bs-table-color: #f8fafc;
+        }
+
+
+        .app-shell {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        .sidebar {
+            width: 240px;
+            background: linear-gradient(180deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.98) 100%);
+            border-right: 1px solid rgba(148, 163, 184, 0.2);
+            padding: 22px 14px;
+            position: sticky;
+            top: 0;
+            height: 100vh;
+        }
+
+        .sidebar-title {
+            color: #e2e8f0;
+            font-size: 1.05rem;
+            font-weight: 700;
+            margin-bottom: 18px;
+            padding: 8px 10px;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+        }
+
+        .sidebar-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            width: 100%;
+            border: 0;
+            text-align: left;
+            padding: 12px 12px;
+            border-radius: 10px;
+            background: transparent;
+            color: #cbd5e1;
+            font-weight: 600;
+            transition: all 0.2s ease;
+        }
+
+        .sidebar-item:hover,
+        .sidebar-item.active {
+            background: linear-gradient(90deg, rgba(59, 130, 246, 0.25), rgba(14, 165, 233, 0.15));
+            color: #f8fafc;
+        }
+
+        .content-area {
+            flex: 1;
+            overflow-x: auto;
+        }
+
+        .policy-doc-editor {
+            background-color: #000 !important;
+            color: #fff !important;
+            border: 1px solid #1f2937 !important;
+        }
+
+        .policy-doc-editor::placeholder {
+            color: #9ca3af !important;
+        }
     </style>
 </head>
 
 <body>
 
-<div class="container mt-5">
+<div class="app-shell">
+    <aside class="sidebar">
+        <div class="sidebar-title">Dashboard</div>
+        <button id="nav-dashboard" class="sidebar-item active" type="button" onclick="showSection('dashboard')">
+            Dashboard
+        </button>
+        <button id="nav-secrets" class="sidebar-item" type="button" onclick="showSection('secrets')">
+            Secrets Manager
+        </button>
+        <button id="nav-settings" class="sidebar-item" type="button" onclick="showSection('settings')">
+            Settings
+        </button>
+        {% if request.user.is_superuser %}
+        <button id="nav-policy" class="sidebar-item" type="button" onclick="showSection('policy')">
+            Policy Engine
+        </button>
+        {% endif %}
+        {% if request.user.is_superuser %}
+        <button id="nav-approvals" class="sidebar-item" type="button" onclick="showSection('approvals')">
+            Approvals
+        </button>
+        {% endif %}
+    </aside>
 
-    <!-- HEADER -->
+    <main class="content-area">
+<div class="container mt-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2>🔐 Secrets Manager</h2>
+        <h2 id="page-title">Dashboard</h2>
 
         <div class="d-flex align-items-center gap-3">
-            <span id="timer" class="badge bg-warning text-dark">10:00</span>
-
-            <!-- ✅ NEW NOTIFICATIONS BUTTON -->
+            <span class="badge rounded-pill text-bg-light" title="Logged in user">
+                👤 {{ request.user.username }}
+            </span>
             <a href="{% url 'notifications' %}" class="btn btn-outline-primary btn-sm">
                 📧 Notifications
             </a>
@@ -34,12 +156,773 @@
                 📜 Audit Logs
             </a>
 
+            {% if request.user.is_superuser %}
+            <form method="POST" action="{% url 'seal' %}" class="d-inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-outline-danger btn-sm">
+                    🔒 Seal Vault
+                </button>
+            </form>
+            {% endif %}
+
             <a href="{% url 'logout' %}" class="btn btn-outline-danger btn-sm">
                 Logout
             </a>
         </div>
     </div>
 
+    {% if messages %}
+    <div class="mb-3">
+        {% for message in messages %}
+        <div class="alert alert-{{ message.tags|default:'info' }} py-2">{{ message }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <div id="welcome-panel" class="card p-4 mb-4 shadow-sm text-center">
+        <h5 class="mb-2">Choose a module from the sidebar</h5>
+        <p class="text-muted mb-0">Click <strong>Secrets Manager</strong> to load all secrets on the right side.</p>
+    </div>
+
+    {% if request.user.is_superuser %}
+    <div id="superuser-activity" class="card p-4 mb-4 shadow-sm">
+        <h5 class="mb-2">Latest user-created resources</h5>
+        <p class="text-muted mb-3">This reflects items created by normal users (environment/folder/secret) in real time.</p>
+        <div class="table-responsive">
+            <table class="table table-sm table-striped align-middle">
+                <thead class="table-dark">
+                    <tr>
+                        <th>User</th>
+                        <th>Entity</th>
+                        <th>Details</th>
+                        <th>Timestamp</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for log in recent_user_creations %}
+                    <tr>
+                        <td>{{ log.user.username }}</td>
+                        <td>{{ log.entity }}</td>
+                        <td>{{ log.details }}</td>
+                        <td>{{ log.timestamp }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="4" class="text-muted text-center">No normal-user creation activity yet.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<div id="section-settings" class="container mt-1" style="display:none;">
+    <div class="card p-4 mb-4 shadow-sm">
+        <h5 class="mb-3">Secret Validation Settings</h5>
+        <p class="text-muted mb-3">Set a regex for secret values. Secret add will be blocked if value does not match.</p>
+        <form method="POST" action="{% url 'save_secret_policy' %}" class="row g-2 align-items-end">
+            {% csrf_token %}
+            <div class="col-md-6">
+                <label class="form-label">Secret Value Regex</label>
+                <input type="text" name="secret_value_regex" class="form-control" placeholder="Example: ^[A-Za-z0-9@#$%^&*]{12,}$" value="{{ secret_policy.secret_value_regex }}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Condition</label>
+                <select name="regex_mode" class="form-select">
+                    <option value="match" {% if secret_policy.regex_mode == 'match' %}selected{% endif %}>Should Match</option>
+                    <option value="not_match" {% if secret_policy.regex_mode == 'not_match' %}selected{% endif %}>Should Not Match</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <button type="submit" class="btn btn-primary w-100">Save Regex</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if request.user.is_superuser %}
+<div id="section-policy" class="container mt-1" style="display:none;">
+    <div class="card p-4 mb-4 shadow-sm">
+        <h5 class="mb-3">User Access Control (UI)</h5>
+        <p class="text-muted mb-3">Grant read/write/delete permissions on environment, folder, or secret for a selected user.</p>
+        <form method="POST" action="{% url 'save_access_policy_ui' %}" class="row g-2 align-items-end">
+            {% csrf_token %}
+            <input type="hidden" name="policy_id" id="access-policy-id">
+            <div class="col-md-3">
+                <label class="form-label">User</label>
+                <select class="form-select" name="user_id" id="access-user-id" required>
+                    <option value="">Select user</option>
+                    {% for u in users %}
+                    <option value="{{ u.id }}">{{ u.username }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Environment (optional)</label>
+                <select class="form-select" name="environment_id" id="access-environment-id">
+                    <option value="">Global / none</option>
+                    {% for env in all_environments %}
+                    <option value="{{ env.id }}">{{ env.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Folder (optional)</label>
+                <select class="form-select" name="folder_id" id="access-folder-id">
+                    <option value="">None</option>
+                    {% for folder in all_folders %}
+                    <option value="{{ folder.id }}">{{ folder.environment.name }} / {{ folder.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Secret (optional)</label>
+                <select class="form-select" name="secret_id" id="access-secret-id">
+                    <option value="">None</option>
+                    {% for secret in all_secrets %}
+                    <option value="{{ secret.id }}">{{ secret.folder.environment.name }} / {{ secret.folder.name }} / {{ secret.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="can_read" id="perm-read">
+                    <label class="form-check-label" for="perm-read">Read</label>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="can_write" id="perm-write">
+                    <label class="form-check-label" for="perm-write">Write</label>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="can_delete" id="perm-delete">
+                    <label class="form-check-label" for="perm-delete">Delete</label>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <button type="submit" class="btn btn-primary w-100">Save UI Access Policy</button>
+            </div>
+            <div class="col-md-2">
+                <button type="button" class="btn btn-outline-secondary w-100" onclick="resetAccessPolicyForm()">Clear</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="card p-4 mb-4 shadow-sm">
+        <h5 class="mb-3">Manual Access Policy (JSON / YAML)</h5>
+        <p class="text-muted mb-2">Paste policy document with top-level <code>rules</code> list.</p>
+        <pre class="bg-light p-2 rounded small text-dark mb-3">{
+  "rules": [
+    {
+      "user": "alice",
+      "environment": "prod",
+      "folder": "payments",
+      "secret": "STRIPE_API_KEY",
+      "permissions": { "read": true, "write": false, "delete": false }
+    }
+  ]
+}</pre>
+        <form method="POST" action="{% url 'save_access_policy_document' %}">
+            {% csrf_token %}
+            <div class="row g-2 align-items-end">
+                <div class="col-md-3">
+                    <label class="form-label">Format</label>
+                    <select name="document_format" class="form-select">
+                        <option value="json">JSON</option>
+                        <option value="yaml">YAML</option>
+                    </select>
+                </div>
+                <div class="col-md-9">
+                    <label class="form-label">Policy Document</label>
+                    <textarea name="policy_document" class="form-control policy-doc-editor" rows="8" placeholder="Paste JSON or YAML policy document"></textarea>
+                </div>
+                <div class="col-md-12">
+                    <button type="submit" class="btn btn-outline-primary w-100">Save Manual Policy Document</button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <div class="card p-4 mb-4 shadow-sm">
+        <h5 class="mb-3">Recent Access Rules</h5>
+        <div class="table-responsive">
+            <table class="table table-sm table-striped align-middle">
+                <thead class="table-dark">
+                    <tr>
+                        <th>User</th>
+                        <th>Environment</th>
+                        <th>Folder</th>
+                        <th>Secret</th>
+                        <th>Read</th>
+                        <th>Write</th>
+                        <th>Delete</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for access in access_policies %}
+                    <tr
+                        data-policy-id="{{ access.id }}"
+                        data-user-id="{{ access.user_id }}"
+                        data-environment-id="{{ access.environment_id|default:'' }}"
+                        data-folder-id="{{ access.folder_id|default:'' }}"
+                        data-secret-id="{{ access.secret_id|default:'' }}"
+                        data-can-read="{{ access.can_read|yesno:'1,0' }}"
+                        data-can-write="{{ access.can_write|yesno:'1,0' }}"
+                        data-can-delete="{{ access.can_delete|yesno:'1,0' }}"
+                    >
+                        <td>{{ access.user.username }}</td>
+                        <td>{{ access.environment.name|default:"*" }}</td>
+                        <td>{{ access.folder.name|default:"*" }}</td>
+                        <td>{{ access.secret.name|default:"*" }}</td>
+                        <td>{% if access.can_read %}✅{% else %}—{% endif %}</td>
+                        <td>{% if access.can_write %}✅{% else %}—{% endif %}</td>
+                        <td>{% if access.can_delete %}✅{% else %}—{% endif %}</td>
+                        <td class="d-flex gap-2">
+                            <button type="button" class="btn btn-outline-primary btn-sm" onclick="editAccessPolicy(this)">Edit</button>
+                            <form method="POST" action="{% url 'delete_access_policy' access.id %}">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-outline-danger btn-sm">Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="8" class="text-center text-muted">No access rules yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card p-4 mb-4 shadow-sm">
+        <h5 class="mb-3">Policy Groups (RBAC)</h5>
+        <p class="text-muted mb-3">Create or update groups with clear role descriptions for production-grade RBAC.</p>
+        <form method="POST" action="{% url 'create_policy_group' %}" class="row g-3 align-items-end">
+            {% csrf_token %}
+            <div class="col-md-5">
+                <label class="form-label">Group Name</label>
+                <input type="text" name="name" class="form-control" placeholder="e.g. DevOps-ReadOnly" required>
+            </div>
+            <div class="col-md-5">
+                <label class="form-label">Description</label>
+                <input type="text" name="description" class="form-control" placeholder="Purpose of this access group">
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary w-100">Save Group</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="card p-4 mb-4 shadow-sm">
+        <h5 class="mb-3">Manual Group Policy (JSON / YAML)</h5>
+        <p class="text-muted mb-2">Bulk-manage policy groups, memberships and policy attachments from JSON/YAML.</p>
+        <pre class="bg-light p-2 rounded small text-dark mb-3">{
+  "groups": [
+    {
+      "name": "DevOps-ReadOnly",
+      "description": "Read-only access for DevOps team",
+      "users": ["alice", "bob"],
+      "policy_ids": [1, 2, 4]
+    }
+  ]
+}</pre>
+        <form method="POST" action="{% url 'save_policy_groups_document' %}">
+            {% csrf_token %}
+            <div class="row g-2 align-items-end">
+                <div class="col-md-3">
+                    <label class="form-label">Format</label>
+                    <select name="group_document_format" class="form-select">
+                        <option value="json">JSON</option>
+                        <option value="yaml">YAML</option>
+                    </select>
+                </div>
+                <div class="col-md-9">
+                    <label class="form-label">Group Policy Document</label>
+                    <textarea name="group_policy_document" class="form-control policy-doc-editor" rows="8" placeholder="Paste group JSON/YAML document"></textarea>
+                </div>
+                <div class="col-md-12">
+                    <button type="submit" class="btn btn-outline-primary w-100">Save Group Policy Document</button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <div class="card p-4 mb-4 shadow-sm">
+        <h5 class="mb-3">Group Membership Management</h5>
+        <div class="row g-3">
+            <div class="col-md-6">
+                <form method="POST" action="{% url 'add_user_to_policy_group' %}" class="row g-2 align-items-end">
+                    {% csrf_token %}
+                    <div class="col-md-6">
+                        <label class="form-label">Group</label>
+                        <select class="form-select" name="group_id" required>
+                            <option value="">Select group</option>
+                            {% for g in policy_groups %}
+                            <option value="{{ g.id }}">{{ g.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">User</label>
+                        <select class="form-select" name="user_id" required>
+                            <option value="">Select user</option>
+                            {% for u in users %}
+                            <option value="{{ u.id }}">{{ u.username }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-12">
+                        <button type="submit" class="btn btn-outline-primary w-100">Add User to Group</button>
+                    </div>
+                </form>
+            </div>
+            <div class="col-md-6">
+                <form method="POST" action="{% url 'remove_user_from_policy_group' %}" class="row g-2 align-items-end">
+                    {% csrf_token %}
+                    <div class="col-md-6">
+                        <label class="form-label">Group</label>
+                        <select class="form-select" name="group_id" required>
+                            <option value="">Select group</option>
+                            {% for g in policy_groups %}
+                            <option value="{{ g.id }}">{{ g.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">User</label>
+                        <select class="form-select" name="user_id" required>
+                            <option value="">Select user</option>
+                            {% for u in users %}
+                            <option value="{{ u.id }}">{{ u.username }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-12">
+                        <button type="submit" class="btn btn-outline-danger w-100">Remove User from Group</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="card p-4 mb-4 shadow-sm">
+        <h5 class="mb-3">Group Policy Attachments</h5>
+        <div class="row g-3">
+            <div class="col-md-6">
+                <form method="POST" action="{% url 'attach_policy_to_group' %}" class="row g-2 align-items-end">
+                    {% csrf_token %}
+                    <div class="col-md-6">
+                        <label class="form-label">Group</label>
+                        <select class="form-select" name="group_id" required>
+                            <option value="">Select group</option>
+                            {% for g in policy_groups %}
+                            <option value="{{ g.id }}">{{ g.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Access Policy</label>
+                        <select class="form-select" name="policy_id" required>
+                            <option value="">Select policy</option>
+                            {% for p in access_policies %}
+                            <option value="{{ p.id }}">#{{ p.id }} - {{ p.user.username }}{% if p.environment %} / {{ p.environment.name }}{% endif %}{% if p.folder %} / {{ p.folder.name }}{% endif %}{% if p.secret %} / {{ p.secret.name }}{% endif %}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-12">
+                        <button type="submit" class="btn btn-outline-primary w-100">Attach Policy to Group</button>
+                    </div>
+                </form>
+            </div>
+            <div class="col-md-6">
+                <form method="POST" action="{% url 'detach_policy_from_group' %}" class="row g-2 align-items-end">
+                    {% csrf_token %}
+                    <div class="col-md-6">
+                        <label class="form-label">Group</label>
+                        <select class="form-select" name="group_id" required>
+                            <option value="">Select group</option>
+                            {% for g in policy_groups %}
+                            <option value="{{ g.id }}">{{ g.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Access Policy</label>
+                        <select class="form-select" name="policy_id" required>
+                            <option value="">Select policy</option>
+                            {% for p in access_policies %}
+                            <option value="{{ p.id }}">#{{ p.id }} - {{ p.user.username }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-12">
+                        <button type="submit" class="btn btn-outline-danger w-100">Detach Policy from Group</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="card p-4 mb-4 shadow-sm">
+        <h5 class="mb-3">Group Summary</h5>
+        <div class="table-responsive">
+            <table class="table table-sm table-striped align-middle">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Group</th>
+                        <th>Members</th>
+                        <th>Attached Policies</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for g in policy_groups %}
+                    <tr>
+                        <td>{{ g.name }}</td>
+                        <td>
+                            {% for m in g.memberships.all %}
+                                <span class="badge bg-secondary me-1">{{ m.user.username }}</span>
+                            {% empty %}
+                                <span class="text-muted">No members</span>
+                            {% endfor %}
+                        </td>
+                        <td>
+                            {% for l in g.policy_links.all %}
+                                <span class="badge bg-info text-dark me-1">Policy #{{ l.policy_id }}</span>
+                            {% empty %}
+                                <span class="text-muted">No policies</span>
+                            {% endfor %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="3" class="text-center text-muted">No policy groups created yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card p-4 mb-4 shadow-sm">
+        <h5 class="mb-3">Effective User Secret Access (Read)</h5>
+        <div class="table-responsive">
+            <table class="table table-sm table-striped align-middle">
+                <thead class="table-dark">
+                    <tr>
+                        <th>User</th>
+                        <th>Readable Secrets (resolved from direct + group policies)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in effective_access_rows %}
+                    <tr>
+                        <td>{{ row.user.username }}</td>
+                        <td>
+                            {% for item in row.readable_secrets %}
+                                <span class="badge bg-light text-dark border me-1 mb-1">{{ item }}</span>
+                            {% empty %}
+                                <span class="text-muted">No readable secrets</span>
+                            {% endfor %}
+                            {% if row.extra_count > 0 %}
+                                <span class="badge bg-secondary">+{{ row.extra_count }} more</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="my-4" style="border-top: 4px solid #ef4444;"></div>
+    <div class="mb-3">
+        <h5 class="text-light">Machine / Service Authentication (AppRole + JWT Workload Identity)</h5>
+        <p class="text-muted mb-0">Human access ends above. The section below is for machine identities only.</p>
+    </div>
+
+    {% if new_approle_secret %}
+    <div class="alert alert-warning">
+        <strong>AppRole Secret ID (copy now):</strong> {{ new_approle_role_name }} → <code>{{ new_approle_secret }}</code>
+    </div>
+    {% endif %}
+
+    <div class="card p-4 mb-4 shadow-sm">
+        <h5 class="mb-3">Machine Policy (UI)</h5>
+        <form method="POST" action="{% url 'save_machine_policy' %}" class="row g-2 align-items-end">
+            {% csrf_token %}
+            <div class="col-md-4">
+                <label class="form-label">Machine Policy Name</label>
+                <input type="text" name="name" class="form-control" placeholder="e.g. ci-cd-readonly" required>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Description</label>
+                <input type="text" name="description" class="form-control" placeholder="Purpose of machine policy">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Base Access Policy</label>
+                <select class="form-select" name="access_policy_id" required>
+                    <option value="">Select access policy</option>
+                    {% for p in access_policies %}
+                    <option value="{{ p.id }}">#{{ p.id }} - {{ p.user.username }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-1">
+                <button type="submit" class="btn btn-primary w-100">Save</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="card p-4 mb-4 shadow-sm">
+        <h5 class="mb-3">AppRole (UI)</h5>
+        <form method="POST" action="{% url 'save_approle' %}" class="row g-2 align-items-end">
+            {% csrf_token %}
+            <div class="col-md-3">
+                <label class="form-label">Role Name</label>
+                <input type="text" name="name" class="form-control" placeholder="e.g. github-actions-role" required>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Machine Policy</label>
+                <select class="form-select" name="machine_policy_id" required>
+                    <option value="">Select machine policy</option>
+                    {% for mp in machine_policies %}
+                    <option value="{{ mp.id }}">{{ mp.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Token TTL (s)</label>
+                <input type="number" name="token_ttl_seconds" class="form-control" value="3600" min="60">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Bound CIDRs (comma-separated)</label>
+                <input type="text" name="bound_cidrs" class="form-control" placeholder="10.0.0.0/24,192.168.1.0/24">
+            </div>
+            <div class="col-md-1">
+                <label class="form-label d-block">Active</label>
+                <input type="checkbox" name="is_active" checked>
+            </div>
+            <div class="col-md-12">
+                <button type="submit" class="btn btn-outline-primary w-100">Save AppRole (generates new Secret ID)</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="card p-4 mb-4 shadow-sm">
+        <h5 class="mb-3">JWT / Workload Identity (UI)</h5>
+        <form method="POST" action="{% url 'save_jwt_workload_identity' %}" class="row g-2 align-items-end">
+            {% csrf_token %}
+            <div class="col-md-3">
+                <label class="form-label">Identity Name</label>
+                <input type="text" name="name" class="form-control" placeholder="e.g. k8s-sa-issuer" required>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Machine Policy</label>
+                <select class="form-select" name="machine_policy_id" required>
+                    <option value="">Select machine policy</option>
+                    {% for mp in machine_policies %}
+                    <option value="{{ mp.id }}">{{ mp.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Issuer</label>
+                <input type="text" name="issuer" class="form-control" placeholder="https://issuer.example.com" required>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Audience</label>
+                <input type="text" name="audience" class="form-control" placeholder="vault-workload" required>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Subject Pattern</label>
+                <input type="text" name="subject_pattern" class="form-control" placeholder="system:serviceaccount:*">
+            </div>
+            <div class="col-md-7">
+                <label class="form-label">JWKS URL</label>
+                <input type="url" name="jwks_url" class="form-control" placeholder="https://issuer.example.com/.well-known/jwks.json">
+            </div>
+            <div class="col-md-1">
+                <label class="form-label d-block">Active</label>
+                <input type="checkbox" name="is_active" checked>
+            </div>
+            <div class="col-md-12">
+                <button type="submit" class="btn btn-outline-primary w-100">Save JWT Workload Identity</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="card p-4 mb-4 shadow-sm">
+        <h5 class="mb-3">Machine Auth Bulk Document (JSON / YAML)</h5>
+        <pre class="bg-light p-2 rounded small text-dark mb-3">{
+  "machine_policies": [
+    {
+      "name": "ci-cd-readonly",
+      "description": "CI pipeline read access",
+      "access_policy_id": 1,
+      "approles": [{"name":"gha-role","token_ttl_seconds":3600,"bound_cidrs":"10.0.0.0/24","is_active":true}],
+      "jwt_identities": [{"name":"k8s-sa","issuer":"https://issuer","audience":"vault","subject_pattern":"system:serviceaccount:*","jwks_url":"https://issuer/.well-known/jwks.json","is_active":true}]
+    }
+  ]
+}</pre>
+        <form method="POST" action="{% url 'save_machine_auth_document' %}">
+            {% csrf_token %}
+            <div class="row g-2 align-items-end">
+                <div class="col-md-3">
+                    <label class="form-label">Format</label>
+                    <select name="machine_auth_format" class="form-select">
+                        <option value="json">JSON</option>
+                        <option value="yaml">YAML</option>
+                    </select>
+                </div>
+                <div class="col-md-9">
+                    <label class="form-label">Machine Auth Document</label>
+                    <textarea name="machine_auth_document" class="form-control policy-doc-editor" rows="8" placeholder="Paste machine auth JSON/YAML document"></textarea>
+                </div>
+                <div class="col-md-12">
+                    <button type="submit" class="btn btn-outline-primary w-100">Save Machine Auth Document</button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <div class="card p-4 mb-4 shadow-sm">
+        <h5 class="mb-3">Configured Machine Identities</h5>
+        <div class="table-responsive mb-3">
+            <table class="table table-sm table-striped align-middle">
+                <thead class="table-dark">
+                    <tr><th>AppRole</th><th>Role ID</th><th>Machine Policy</th><th>TTL</th><th>Active</th></tr>
+                </thead>
+                <tbody>
+                    {% for ar in approles %}
+                    <tr>
+                        <td>{{ ar.name }}</td>
+                        <td><code>{{ ar.role_id }}</code></td>
+                        <td>{{ ar.machine_policy.name }}</td>
+                        <td>{{ ar.token_ttl_seconds }}s</td>
+                        <td>{% if ar.is_active %}✅{% else %}❌{% endif %}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="5" class="text-center text-muted">No AppRoles configured.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-sm table-striped align-middle">
+                <thead class="table-dark">
+                    <tr><th>JWT Identity</th><th>Issuer</th><th>Audience</th><th>Machine Policy</th><th>Active</th></tr>
+                </thead>
+                <tbody>
+                    {% for jw in jwt_identities %}
+                    <tr>
+                        <td>{{ jw.name }}</td>
+                        <td>{{ jw.issuer }}</td>
+                        <td>{{ jw.audience }}</td>
+                        <td>{{ jw.machine_policy.name }}</td>
+                        <td>{% if jw.is_active %}✅{% else %}❌{% endif %}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="5" class="text-center text-muted">No JWT workload identities configured.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if request.user.is_superuser %}
+<div id="section-approvals" class="container mt-1" style="display:none;">
+    <div class="card p-4 mb-4 shadow-sm">
+        <h5 class="mb-2">Deletion Approvals</h5>
+        <p class="text-muted mb-3">Only root/super user can approve or reject pending delete requests from normal users.</p>
+        <div class="table-responsive">
+            <table class="table table-sm table-striped align-middle">
+                <thead class="table-dark">
+                    <tr>
+                        <th>ID</th>
+                        <th>Requested By</th>
+                        <th>Target</th>
+                        <th>Name</th>
+                        <th>Requested At</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for req in pending_deletion_approvals %}
+                    <tr>
+                        <td>#{{ req.id }}</td>
+                        <td>{{ req.requested_by.username }}</td>
+                        <td>{{ req.target_type|title }}</td>
+                        <td>{{ req.target_name }}</td>
+                        <td>{{ req.created_at }}</td>
+                        <td class="d-flex gap-2">
+                            <form method="POST" action="{% url 'approve_deletion_request' req.id %}">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-success btn-sm">Approve</button>
+                            </form>
+                            <form method="POST" action="{% url 'reject_deletion_request' req.id %}">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-outline-danger btn-sm">Reject</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="6" class="text-center text-muted">No pending deletion approvals.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card p-4 mb-4 shadow-sm">
+        <h5 class="mb-3">Recent Decisions</h5>
+        <div class="table-responsive">
+            <table class="table table-sm table-striped align-middle">
+                <thead class="table-dark">
+                    <tr>
+                        <th>ID</th>
+                        <th>Status</th>
+                        <th>Requested By</th>
+                        <th>Target</th>
+                        <th>Decided By</th>
+                        <th>Decided At</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for req in recent_deletion_approvals %}
+                    <tr>
+                        <td>#{{ req.id }}</td>
+                        <td>
+                            {% if req.status == "approved" %}
+                            <span class="badge bg-success">Approved</span>
+                            {% else %}
+                            <span class="badge bg-danger">Rejected</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ req.requested_by.username }}</td>
+                        <td>{{ req.target_type|title }} / {{ req.target_name }}</td>
+                        <td>{{ req.approver.username|default:"-" }}</td>
+                        <td>{{ req.decided_at|default:"-" }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="6" class="text-center text-muted">No processed requests yet.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div id="section-secrets" class="container mt-1" style="display:none;">
     <!-- ADD ENVIRONMENT -->
     <div class="card p-4 mb-4 shadow-sm">
         <h5>Add Environment</h5>
@@ -60,13 +943,29 @@
                         data-bs-toggle="collapse"
                         data-bs-target="#collapseEnv{{ env.id }}">
                     {{ env.name }}
+                    {% if request.user.is_superuser %}
+                    <span class="badge bg-light text-dark ms-2">Created by: {{ env.created_by.username }}</span>
+                    <span class="badge {% if env.require_admin_delete_approval %}bg-warning text-dark{% else %}bg-secondary{% endif %} ms-2">
+                        Approval: {% if env.require_admin_delete_approval %}Enabled{% else %}Disabled{% endif %}
+                    </span>
+                    {% endif %}
                 </button>
 
-                <button class="btn btn-outline-danger btn-sm me-3"
-                        data-bs-toggle="modal"
-                        data-bs-target="#deleteEnvModal{{ env.id }}">
-                    Delete
-                </button>
+                <div class="d-flex align-items-center gap-2 me-3">
+                    {% if request.user.is_superuser %}
+                    <form method="POST" action="{% url 'toggle_environment_delete_approval' env.id %}">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-outline-warning btn-sm">
+                            {% if env.require_admin_delete_approval %}Disable Approval{% else %}Enable Approval{% endif %}
+                        </button>
+                    </form>
+                    {% endif %}
+                    <button class="btn btn-outline-danger btn-sm"
+                            data-bs-toggle="modal"
+                            data-bs-target="#deleteEnvModal{{ env.id }}">
+                        Delete
+                    </button>
+                </div>
             </h2>
 
             <!-- DELETE ENVIRONMENT MODAL -->
@@ -78,13 +977,27 @@
                             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                         </div>
                         <div class="modal-body">
+                            {% if request.user.is_superuser %}
                             Are you sure you want to delete <strong>{{ env.name }}</strong> ?
+                            {% else %}
+                                {% if env.require_admin_delete_approval %}
+                                Submit delete request for <strong>{{ env.name }}</strong> to root/super user approval?
+                                {% else %}
+                                Are you sure you want to delete <strong>{{ env.name }}</strong> ?
+                                {% endif %}
+                            {% endif %}
                         </div>
                         <div class="modal-footer">
                             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">No</button>
                             <form method="POST" action="{% url 'delete_environment' env.id %}">
                                 {% csrf_token %}
-                                <button type="submit" class="btn btn-danger">Yes, Delete</button>
+                                <button type="submit" class="btn btn-danger">
+                                    {% if request.user.is_superuser %}
+                                        Yes, Delete
+                                    {% else %}
+                                        {% if env.require_admin_delete_approval %}Send Approval Request{% else %}Yes, Delete{% endif %}
+                                    {% endif %}
+                                </button>
                             </form>
                         </div>
                     </div>
@@ -103,6 +1016,7 @@
                           class="d-flex gap-2 mb-3">
                         {% csrf_token %}
                         <input type="text" name="name" class="form-control" placeholder="Folder Name" required>
+                        <input type="email" name="owner_email" class="form-control" placeholder="Folder Owner Email">
                         <button type="submit" class="btn btn-secondary btn-sm">Add Folder</button>
                     </form>
 
@@ -116,6 +1030,8 @@
                                         data-bs-toggle="collapse"
                                         data-bs-target="#collapseFolder{{ folder.id }}">
                                     📁 {{ folder.name }}
+                                    <span class="badge bg-info text-dark ms-2">Risk: {{ folder.risk_score }}/100</span>
+                                    <span class="badge bg-light text-dark ms-2">Owner: {{ folder.owner_email|default:"-" }}</span>
                                 </button>
 
                                 <button class="btn btn-outline-danger btn-sm me-3"
@@ -134,13 +1050,27 @@
                                             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                                         </div>
                                         <div class="modal-body">
+                                            {% if request.user.is_superuser %}
                                             Are you sure you want to delete <strong>{{ folder.name }}</strong> ?
+                                            {% else %}
+                                                {% if env.require_admin_delete_approval %}
+                                                Submit delete request for <strong>{{ folder.name }}</strong> to root/super user approval?
+                                                {% else %}
+                                                Are you sure you want to delete <strong>{{ folder.name }}</strong> ?
+                                                {% endif %}
+                                            {% endif %}
                                         </div>
                                         <div class="modal-footer">
                                             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">No</button>
                                             <form method="POST" action="{% url 'delete_folder' folder.id %}">
                                                 {% csrf_token %}
-                                                <button type="submit" class="btn btn-danger">Yes, Delete</button>
+                                                <button type="submit" class="btn btn-danger">
+                                                    {% if request.user.is_superuser %}
+                                                        Yes, Delete
+                                                    {% else %}
+                                                        {% if env.require_admin_delete_approval %}Send Approval Request{% else %}Yes, Delete{% endif %}
+                                                    {% endif %}
+                                                </button>
                                             </form>
                                         </div>
                                     </div>
@@ -156,18 +1086,23 @@
                                     <!-- ADD SECRET -->
                                     <form method="POST"
                                           action="{% url 'add_secret' folder.id %}"
-                                          class="row g-2 mb-3">
+                                          class="row g-2 mb-3 secret-form"
+                                          data-secret-regex="{{ secret_policy.secret_value_regex|escapejs }}"
+                                          data-regex-mode="{{ secret_policy.regex_mode|default:'match' }}">
                                         {% csrf_token %}
-                                        <div class="col-md-3">
+                                        <div class="col-md-2">
                                             <input type="text" name="name" class="form-control" placeholder="Secret Name" required>
+                                        </div>
+                                        <div class="col-md-2">
+                                            <input type="text" name="service_name" class="form-control" placeholder="Service Name">
                                         </div>
                                         <div class="col-md-4">
                                             <input type="text" name="value" class="form-control" placeholder="Secret Value" required>
                                         </div>
-                                        <div class="col-md-3">
+                                        <div class="col-md-1">
                                             <input type="date" name="expire" class="form-control">
                                         </div>
-                                        <div class="col-md-2">
+                                        <div class="col-md-1">
                                             <button type="submit" class="btn btn-success w-100">Add Secret</button>
                                         </div>
                                     </form>
@@ -177,24 +1112,40 @@
                                         <thead class="table-dark">
                                             <tr>
                                                 <th>Name</th>
+                                                <th>Service</th>
                                                 <th>Secret</th>
                                                 <th>Expire Date</th>
-                                                <th width="200">Action</th>
+                                                <th width="220">Action</th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                         {% for secret in folder.secrets.all %}
                                             <tr>
                                                 <td>{{ secret.name }}</td>
+                                                <td>{{ secret.service_name|default:"-" }}</td>
                                                 <td>
                                                     <span id="secret-{{ secret.id }}" class="secret-value">******</span>
                                                 </td>
                                                 <td>{{ secret.expire_date }}</td>
-                                                <td class="d-flex gap-2">
+                                                <td class="d-flex gap-2 flex-wrap">
+                                                    {% if secret.is_access_enabled or request.user.is_superuser %}
                                                     <button class="btn btn-outline-primary btn-sm"
                                                             onclick="toggleSecret({{ secret.id }})">
                                                         Show
                                                     </button>
+                                                    {% else %}
+                                                    <span class="badge bg-secondary">Admin Locked</span>
+                                                    {% endif %}
+
+                                                    {% if request.user.is_superuser %}
+                                                    <form method="POST" action="{% url 'toggle_secret_access' secret.id %}">
+                                                        {% csrf_token %}
+                                                        <button type="submit" class="btn btn-outline-danger btn-sm">
+                                                            {% if secret.is_access_enabled %}Disable Access{% else %}Enable Access{% endif %}
+                                                        </button>
+                                                    </form>
+                                                    {% endif %}
+
                                                     <button class="btn btn-outline-danger btn-sm"
                                                             data-bs-toggle="modal"
                                                             data-bs-target="#deleteSecretModal{{ secret.id }}">
@@ -212,13 +1163,27 @@
                                                             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                                                         </div>
                                                         <div class="modal-body">
+                                                            {% if request.user.is_superuser %}
                                                             Are you sure you want to delete <strong>{{ secret.name }}</strong> ?
+                                                            {% else %}
+                                                                {% if env.require_admin_delete_approval %}
+                                                                Submit delete request for <strong>{{ secret.name }}</strong> to root/super user approval?
+                                                                {% else %}
+                                                                Are you sure you want to delete <strong>{{ secret.name }}</strong> ?
+                                                                {% endif %}
+                                                            {% endif %}
                                                         </div>
                                                         <div class="modal-footer">
                                                             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">No</button>
                                                             <form method="POST" action="{% url 'delete_secret' secret.id %}">
                                                                 {% csrf_token %}
-                                                                <button type="submit" class="btn btn-danger">Yes, Delete</button>
+                                                                <button type="submit" class="btn btn-danger">
+                                                                    {% if request.user.is_superuser %}
+                                                                        Yes, Delete
+                                                                    {% else %}
+                                                                        {% if env.require_admin_delete_approval %}Send Approval Request{% else %}Yes, Delete{% endif %}
+                                                                    {% endif %}
+                                                                </button>
                                                             </form>
                                                         </div>
                                                     </div>
@@ -227,7 +1192,7 @@
 
                                         {% empty %}
                                             <tr>
-                                                <td colspan="4" class="text-muted text-center">
+                                                <td colspan="6" class="text-muted text-center">
                                                     No secrets yet
                                                 </td>
                                             </tr>
@@ -247,61 +1212,150 @@
         {% endfor %}
     </div>
 </div>
+    </main>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
 <script>
+function showSection(section) {
+    const sections = ["secrets", "settings", "policy", "approvals"];
+    const sectionTitles = {
+        dashboard: "Dashboard",
+        secrets: "Secrets Manager",
+        settings: "Settings",
+        policy: "Policy Engine",
+        approvals: "Approvals",
+    };
+
+    const welcome = document.getElementById("welcome-panel");
+    const superuserActivity = document.getElementById("superuser-activity");
+    const dashboardBtn = document.getElementById("nav-dashboard");
+    const pageTitle = document.getElementById("page-title");
+    const isDashboard = section === "dashboard" || !section;
+
+    sections.forEach(name => {
+        const panel = document.getElementById(`section-${name}`);
+        const navBtn = document.getElementById(`nav-${name}`);
+
+        if (panel) panel.style.display = name === section ? "block" : "none";
+        if (navBtn) navBtn.classList.toggle("active", name === section);
+    });
+
+    if (dashboardBtn) {
+        dashboardBtn.classList.toggle("active", isDashboard);
+    }
+
+    if (welcome) {
+        welcome.style.display = isDashboard ? "block" : "none";
+    }
+    if (superuserActivity) {
+        superuserActivity.style.display = isDashboard ? "block" : "none";
+    }
+
+    const normalizedSection = isDashboard ? "dashboard" : section;
+    if (pageTitle) {
+        pageTitle.innerText = sectionTitles[normalizedSection] || "Dashboard";
+    }
+}
+
+function resetAccessPolicyForm() {
+    const policyId = document.getElementById("access-policy-id");
+    const user = document.getElementById("access-user-id");
+    const env = document.getElementById("access-environment-id");
+    const folder = document.getElementById("access-folder-id");
+    const secret = document.getElementById("access-secret-id");
+    const read = document.getElementById("perm-read");
+    const write = document.getElementById("perm-write");
+    const del = document.getElementById("perm-delete");
+
+    if (policyId) policyId.value = "";
+    if (user) user.value = "";
+    if (env) env.value = "";
+    if (folder) folder.value = "";
+    if (secret) secret.value = "";
+    if (read) read.checked = false;
+    if (write) write.checked = false;
+    if (del) del.checked = false;
+}
+
+function editAccessPolicy(button) {
+    const row = button.closest("tr");
+    if (!row) return;
+
+    const policyId = document.getElementById("access-policy-id");
+    const user = document.getElementById("access-user-id");
+    const env = document.getElementById("access-environment-id");
+    const folder = document.getElementById("access-folder-id");
+    const secret = document.getElementById("access-secret-id");
+    const read = document.getElementById("perm-read");
+    const write = document.getElementById("perm-write");
+    const del = document.getElementById("perm-delete");
+
+    if (policyId) policyId.value = row.dataset.policyId || "";
+    if (user) user.value = row.dataset.userId || "";
+    if (env) env.value = row.dataset.environmentId || "";
+    if (folder) folder.value = row.dataset.folderId || "";
+    if (secret) secret.value = row.dataset.secretId || "";
+    if (read) read.checked = row.dataset.canRead === "1";
+    if (write) write.checked = row.dataset.canWrite === "1";
+    if (del) del.checked = row.dataset.canDelete === "1";
+
+    const policySection = document.getElementById("section-policy");
+    if (policySection) policySection.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 function toggleSecret(id) {
     const element = document.getElementById(`secret-${id}`);
     if (element.innerText === "******") {
         fetch(`/secrets/reveal-secret/${id}/`)
-            .then(res => res.json())
-            .then(data => { element.innerText = data.secret; });
+            .then(async res => {
+                const data = await res.json();
+                if (!res.ok) {
+                    alert(data.error || "Unable to reveal secret");
+                    return;
+                }
+                element.innerText = data.secret;
+            });
     } else {
         element.innerText = "******";
     }
 }
 
-/* ===== LOGIN-BASED TIMER ===== */
 
-const TIMEOUT_MINUTES = 10;
-const TIMEOUT_MS = TIMEOUT_MINUTES * 60 * 1000;
-const SESSION_KEY = "vault_login_expiry";
+function attachSecretRegexValidation() {
+    document.querySelectorAll("form.secret-form").forEach(form => {
+        form.addEventListener("submit", function (e) {
+            const pattern = form.dataset.secretRegex || "";
+            const mode = form.dataset.regexMode || "match";
+            if (!pattern) return;
 
-function startTimer() {
+            const valueInput = form.querySelector('input[name="value"]');
+            const value = valueInput ? valueInput.value : "";
 
-    let expiry = sessionStorage.getItem(SESSION_KEY);
+            try {
+                const regex = new RegExp(pattern);
+                const isMatch = regex.test(value);
 
-    if (!expiry) {
-        expiry = Date.now() + TIMEOUT_MS;
-        sessionStorage.setItem(SESSION_KEY, expiry);
-    }
+                if (mode === "match" && !isMatch) {
+                    e.preventDefault();
+                    alert("Secret should match the configured regex in Settings.");
+                }
 
-    function update() {
-        const now = Date.now();
-        const remaining = expiry - now;
-
-        if (remaining <= 0) {
-            sessionStorage.removeItem(SESSION_KEY);
-            fetch("{% url 'seal' %}")
-                .then(() => {
-                    window.location.href = "{% url 'login' %}";
-                });
-            return;
-        }
-
-        const minutes = Math.floor(remaining / 60000);
-        const seconds = Math.floor((remaining % 60000) / 1000);
-
-        document.getElementById("timer").innerText =
-            minutes + ":" + (seconds < 10 ? "0" : "") + seconds;
-    }
-
-    setInterval(update, 1000);
-    update();
+                if (mode === "not_match" && isMatch) {
+                    e.preventDefault();
+                    alert("Secret should NOT match the configured regex in Settings.");
+                }
+            } catch (err) {
+                e.preventDefault();
+                alert("Configured regex is invalid. Please update Settings.");
+            }
+        });
+    });
 }
 
-startTimer();
+showSection("dashboard");
+attachSecretRegexValidation();
 </script>
 
 </body>

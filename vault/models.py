@@ -49,3 +49,17 @@ class VaultConfig(models.Model):
 
     allowed_location = models.CharField(max_length=255)
     is_sealed = models.BooleanField(default=True)
+
+class WebAuthnDevice(models.Model):
+    vault = models.ForeignKey(VaultConfig, on_delete=models.CASCADE, related_name="webauthn_devices")
+    credential_id = models.BinaryField(unique=True)
+    public_key = models.BinaryField()
+    sign_count = models.IntegerField(default=0)
+    device_label = models.CharField(max_length=120, blank=True, default="")
+    device_fingerprint = models.CharField(max_length=64)
+    user_agent = models.TextField(blank=True, default="")
+    added_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.device_label or f"WebAuthnDevice<{self.id}>"
+
