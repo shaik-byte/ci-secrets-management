@@ -311,24 +311,14 @@
 
     <div id="secret-path-search-panel" class="card p-4 mb-4 shadow-sm secret-path-search">
         <h5 class="mb-2">Find secret location</h5>
-        <p class="text-muted mb-3">Search by secret metadata (name/service/path) or exact secret value. Results only include secrets you can read.</p>
+        <p class="text-muted mb-3">Search by secret metadata (name/service/path). Results only include secrets you can read.</p>
         <form id="secret-path-search-form" class="row g-2 align-items-end">
-            <div class="col-md-7">
+            <div class="col-md-10">
                 <label for="secret-path-query" class="form-label">Search</label>
-                <input id="secret-path-query" name="q" type="text" maxlength="200" class="form-control" placeholder="Example: STRIPE_API_KEY or exact value">
-            </div>
-            <div class="col-md-3">
-                <label for="secret-path-mode" class="form-label">Mode</label>
-                <select id="secret-path-mode" name="mode" class="form-select">
-                    <option value="name">Name / service / path</option>
-                    <option value="value_exact">Exact secret value</option>
-                </select>
+                <input id="secret-path-query" name="q" type="text" maxlength="200" class="form-control" placeholder="Example: STRIPE_API_KEY">
             </div>
             <div class="col-md-2 d-grid">
                 <button type="submit" class="btn btn-primary">Search</button>
-            </div>
-            <div class="col-12">
-                <small class="text-muted">Tip: value search is exact match only and does not reveal the secret, only its location.</small>
             </div>
         </form>
         <div id="secret-path-search-feedback" class="small mt-3 text-muted"></div>
@@ -1651,14 +1641,12 @@ function toggleSecret(id) {
 async function searchSecretPaths(event) {
     event.preventDefault();
     const queryInput = document.getElementById("secret-path-query");
-    const modeInput = document.getElementById("secret-path-mode");
     const feedback = document.getElementById("secret-path-search-feedback");
     const resultsWrap = document.getElementById("secret-path-search-results-wrap");
     const resultsBody = document.getElementById("secret-path-search-results");
-    if (!queryInput || !modeInput || !feedback || !resultsWrap || !resultsBody) return;
+    if (!queryInput || !feedback || !resultsWrap || !resultsBody) return;
 
     const query = queryInput.value.trim();
-    const mode = modeInput.value;
     if (query.length < 2) {
         feedback.textContent = "Please enter at least 2 characters.";
         feedback.className = "small mt-3 text-danger";
@@ -1670,7 +1658,7 @@ async function searchSecretPaths(event) {
     feedback.className = "small mt-3 text-muted";
 
     try {
-        const params = new URLSearchParams({ q: query, mode });
+        const params = new URLSearchParams({ q: query });
         const res = await fetch(`/secrets/search-secret-paths/?${params.toString()}`, {
             headers: { "X-Requested-With": "XMLHttpRequest" },
             credentials: "same-origin",
