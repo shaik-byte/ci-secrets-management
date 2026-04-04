@@ -1352,9 +1352,19 @@ function showSection(section) {
     if (pageTitle) {
         pageTitle.innerText = sectionTitles[normalizedSection] || "Dashboard";
     }
+
+    if (normalizedSection === "dashboard" || document.getElementById(`section-${normalizedSection}`)) {
+        localStorage.setItem("vault_active_section", normalizedSection);
+    }
 }
 
 document.addEventListener("DOMContentLoaded", function () {
+    const requestedSection = new URLSearchParams(window.location.search).get("section");
+    const savedSection = localStorage.getItem("vault_active_section");
+    const preferredSection = requestedSection || savedSection || "dashboard";
+    const sectionExists = preferredSection === "dashboard" || document.getElementById(`section-${preferredSection}`);
+    showSection(sectionExists ? preferredSection : "dashboard");
+
     const applyAllCheckbox = document.getElementById("apply-all-environments");
     const envCheckboxes = document.querySelectorAll(".env-checkbox");
     if (!applyAllCheckbox || !envCheckboxes.length) return;
