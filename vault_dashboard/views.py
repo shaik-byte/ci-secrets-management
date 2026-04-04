@@ -171,41 +171,12 @@ from .models import (
     UserFeatureAccess,
 )
 from .utils import encrypt_value, decrypt_value
+from .feature_access import FEATURE_CATALOG, FEATURE_DEFAULTS, resolve_user_feature_visibility, user_has_feature
 
 from auditlogs.models import AuditLog
 
 MACHINE_SESSION_TTL_SECONDS = 3600
 JWKS_CACHE_TTL_SECONDS = 300
-
-FEATURE_CATALOG = [
-    {"key": "secrets", "label": "Secrets Manager", "default_enabled": True, "superuser_only": False},
-    {"key": "settings", "label": "Settings", "default_enabled": False, "superuser_only": True},
-    {"key": "policy", "label": "Policy Engine", "default_enabled": False, "superuser_only": True},
-    {"key": "approvals", "label": "Approvals", "default_enabled": False, "superuser_only": True},
-    {"key": "notifications", "label": "Notifications", "default_enabled": False, "superuser_only": True},
-    {"key": "audit_logs", "label": "Audit Logs", "default_enabled": False, "superuser_only": True},
-    {"key": "seal_vault", "label": "Seal Vault", "default_enabled": False, "superuser_only": True},
-]
-FEATURE_DEFAULTS = {item["key"]: item["default_enabled"] for item in FEATURE_CATALOG}
-SUPERUSER_ONLY_FEATURES = {item["key"] for item in FEATURE_CATALOG if item["superuser_only"]}
-
-
-def _resolve_user_feature_visibility(user):
-    if user.is_superuser:
-        return {item["key"] for item in FEATURE_CATALOG}
-
-    rules = {
-        row.feature_key: row.can_view
-        for row in UserFeatureAccess.objects.filter(user=user)
-    }
-    visible = set()
-    for item in FEATURE_CATALOG:
-        key = item["key"]
-        default_value = FEATURE_DEFAULTS.get(key, False)
-        if rules.get(key, default_value):
-            visible.add(key)
-
-    return visible
 
 
 def _action_field(action):
@@ -300,7 +271,7 @@ def dashboard(request):
     ]
 
     users = User.objects.order_by("username")
-    visible_feature_keys = _resolve_user_feature_visibility(request.user)
+    visible_feature_keys = resolve_user_feature_visibility(request.user)
     feature_rows = []
     if request.user.is_superuser:
         all_rules = UserFeatureAccess.objects.select_related("user").all()
@@ -319,8 +290,7 @@ def dashboard(request):
                     "key": key,
                     "label": feature["label"],
                     "enabled": effective_enabled,
-                    "superuser_only": feature["superuser_only"],
-                    "locked": target_user.is_superuser or feature["superuser_only"],
+                    "locked": target_user.is_superuser,
                 })
             feature_rows.append({"user": target_user, "features": row})
 
@@ -353,8 +323,8 @@ def dashboard(request):
         "jwt_identities": JWTWorkloadIdentity.objects.select_related("machine_policy").order_by("name"),
         "new_approle_secret": request.session.pop("new_approle_secret", None),
         "new_approle_role_name": request.session.pop("new_approle_role_name", None),
-        "pending_deletion_approvals": DeletionApprovalRequest.objects.select_related("requested_by").filter(status="pending")[:100] if request.user.is_superuser else [],
-        "recent_deletion_approvals": DeletionApprovalRequest.objects.select_related("requested_by", "approver").exclude(status="pending")[:100] if request.user.is_superuser else [],
+        "pending_deletion_approvals": DeletionApprovalRequest.objects.select_related("requested_by").filter(status="pending")[:100] if "approvals" in visible_feature_keys else [],
+        "recent_deletion_approvals": DeletionApprovalRequest.objects.select_related("requested_by", "approver").exclude(status="pending")[:100] if "approvals" in visible_feature_keys else [],
         "recent_user_creations": AuditLog.objects.select_related("user").filter(action="CREATE", user__is_superuser=False).order_by("-timestamp")[:20] if request.user.is_superuser else [],
         "can_view_secrets": "secrets" in visible_feature_keys,
         "can_view_settings": "settings" in visible_feature_keys,
@@ -661,8 +631,8 @@ def delete_secret(request, secret_id):
 def approve_deletion_request(request, approval_id):
     if request.method != "POST":
         return HttpResponseForbidden("Invalid request method")
-    if not request.user.is_superuser:
-        return HttpResponseForbidden("Only admin can approve deletion requests.")
+    if not user_has_feature(request.user, "approvals"):
+        return HttpResponseForbidden("You do not have approvals feature access.")
 
     approval = get_object_or_404(DeletionApprovalRequest, id=approval_id, status="pending")
     target_obj = _resolve_delete_target(approval)
@@ -702,8 +672,8 @@ def approve_deletion_request(request, approval_id):
 def reject_deletion_request(request, approval_id):
     if request.method != "POST":
         return HttpResponseForbidden("Invalid request method")
-    if not request.user.is_superuser:
-        return HttpResponseForbidden("Only admin can reject deletion requests.")
+    if not user_has_feature(request.user, "approvals"):
+        return HttpResponseForbidden("You do not have approvals feature access.")
 
     approval = get_object_or_404(DeletionApprovalRequest, id=approval_id, status="pending")
     approval.status = "rejected"
@@ -728,8 +698,8 @@ def reject_deletion_request(request, approval_id):
 def toggle_environment_delete_approval(request, env_id):
     if request.method != "POST":
         return HttpResponseForbidden("Invalid request method")
-    if not request.user.is_superuser:
-        return HttpResponseForbidden("Only admin can change approval mode.")
+    if not user_has_feature(request.user, "approvals"):
+        return HttpResponseForbidden("You do not have approvals feature access.")
 
     env = get_object_or_404(Environment, id=env_id)
     env.require_admin_delete_approval = not env.require_admin_delete_approval
@@ -749,8 +719,8 @@ def toggle_environment_delete_approval(request, env_id):
 
 @login_required
 def save_secret_policy(request):
-    if not request.user.is_superuser:
-        return HttpResponseForbidden("Only admin can update secret policy settings.")
+    if not user_has_feature(request.user, "settings"):
+        return HttpResponseForbidden("You do not have settings feature access.")
 
     if request.method == "POST":
         pattern = (request.POST.get("secret_value_regex") or "").strip()
@@ -794,10 +764,6 @@ def save_feature_access(request):
 
     with transaction.atomic():
         for key in allowed_keys:
-            if key in SUPERUSER_ONLY_FEATURES:
-                UserFeatureAccess.objects.filter(user=target_user, feature_key=key).delete()
-                continue
-
             desired = key in selected
             default_value = FEATURE_DEFAULTS.get(key, False)
             if desired == default_value:
@@ -817,8 +783,8 @@ def save_feature_access(request):
 def save_access_policy_ui(request):
     if request.method != "POST":
         return HttpResponseForbidden("Invalid request method")
-    if not request.user.is_superuser:
-        return HttpResponseForbidden("Only admin can manage policy engine access.")
+    if not user_has_feature(request.user, "policy"):
+        return HttpResponseForbidden("You do not have policy engine feature access.")
 
     policy_id = request.POST.get("policy_id")
     user_id = request.POST.get("user_id")
@@ -880,8 +846,8 @@ def save_access_policy_ui(request):
 def save_access_policy_document(request):
     if request.method != "POST":
         return HttpResponseForbidden("Invalid request method")
-    if not request.user.is_superuser:
-        return HttpResponseForbidden("Only admin can manage policy engine access.")
+    if not user_has_feature(request.user, "policy"):
+        return HttpResponseForbidden("You do not have policy engine feature access.")
 
     raw = (request.POST.get("policy_document") or "").strip()
     doc_format = (request.POST.get("document_format") or "json").strip().lower()
@@ -936,8 +902,8 @@ def save_access_policy_document(request):
 def delete_access_policy(request, policy_id):
     if request.method != "POST":
         return HttpResponseForbidden("Invalid request method")
-    if not request.user.is_superuser:
-        return HttpResponseForbidden("Only admin can manage policy engine access.")
+    if not user_has_feature(request.user, "policy"):
+        return HttpResponseForbidden("You do not have policy engine feature access.")
 
     policy = get_object_or_404(AccessPolicy, id=policy_id)
     policy.delete()
@@ -949,8 +915,8 @@ def delete_access_policy(request, policy_id):
 def create_policy_group(request):
     if request.method != "POST":
         return HttpResponseForbidden("Invalid request method")
-    if not request.user.is_superuser:
-        return HttpResponseForbidden("Only admin can manage policy groups.")
+    if not user_has_feature(request.user, "policy"):
+        return HttpResponseForbidden("You do not have policy engine feature access.")
 
     name = (request.POST.get("name") or "").strip()
     description = (request.POST.get("description") or "").strip()
@@ -970,8 +936,8 @@ def create_policy_group(request):
 def add_user_to_policy_group(request):
     if request.method != "POST":
         return HttpResponseForbidden("Invalid request method")
-    if not request.user.is_superuser:
-        return HttpResponseForbidden("Only admin can manage policy groups.")
+    if not user_has_feature(request.user, "policy"):
+        return HttpResponseForbidden("You do not have policy engine feature access.")
 
     group = get_object_or_404(PolicyGroup, id=request.POST.get("group_id"))
     user = get_object_or_404(User, id=request.POST.get("user_id"))
@@ -984,8 +950,8 @@ def add_user_to_policy_group(request):
 def remove_user_from_policy_group(request):
     if request.method != "POST":
         return HttpResponseForbidden("Invalid request method")
-    if not request.user.is_superuser:
-        return HttpResponseForbidden("Only admin can manage policy groups.")
+    if not user_has_feature(request.user, "policy"):
+        return HttpResponseForbidden("You do not have policy engine feature access.")
 
     group = get_object_or_404(PolicyGroup, id=request.POST.get("group_id"))
     user = get_object_or_404(User, id=request.POST.get("user_id"))
@@ -998,8 +964,8 @@ def remove_user_from_policy_group(request):
 def attach_policy_to_group(request):
     if request.method != "POST":
         return HttpResponseForbidden("Invalid request method")
-    if not request.user.is_superuser:
-        return HttpResponseForbidden("Only admin can manage policy groups.")
+    if not user_has_feature(request.user, "policy"):
+        return HttpResponseForbidden("You do not have policy engine feature access.")
 
     group = get_object_or_404(PolicyGroup, id=request.POST.get("group_id"))
     policy = get_object_or_404(AccessPolicy, id=request.POST.get("policy_id"))
@@ -1012,8 +978,8 @@ def attach_policy_to_group(request):
 def detach_policy_from_group(request):
     if request.method != "POST":
         return HttpResponseForbidden("Invalid request method")
-    if not request.user.is_superuser:
-        return HttpResponseForbidden("Only admin can manage policy groups.")
+    if not user_has_feature(request.user, "policy"):
+        return HttpResponseForbidden("You do not have policy engine feature access.")
 
     group = get_object_or_404(PolicyGroup, id=request.POST.get("group_id"))
     policy = get_object_or_404(AccessPolicy, id=request.POST.get("policy_id"))
@@ -1026,8 +992,8 @@ def detach_policy_from_group(request):
 def save_policy_groups_document(request):
     if request.method != "POST":
         return HttpResponseForbidden("Invalid request method")
-    if not request.user.is_superuser:
-        return HttpResponseForbidden("Only admin can manage policy groups.")
+    if not user_has_feature(request.user, "policy"):
+        return HttpResponseForbidden("You do not have policy engine feature access.")
 
     raw = (request.POST.get("group_policy_document") or "").strip()
     doc_format = (request.POST.get("group_document_format") or "json").strip().lower()
@@ -1236,8 +1202,8 @@ def jwt_machine_login(request):
 def save_machine_policy(request):
     if request.method != "POST":
         return HttpResponseForbidden("Invalid request method")
-    if not request.user.is_superuser:
-        return HttpResponseForbidden("Only admin can manage machine auth policies.")
+    if not user_has_feature(request.user, "policy"):
+        return HttpResponseForbidden("You do not have policy engine feature access.")
 
     name = (request.POST.get("name") or "").strip()
     description = (request.POST.get("description") or "").strip()
@@ -1262,8 +1228,8 @@ def save_machine_policy(request):
 def save_approle(request):
     if request.method != "POST":
         return HttpResponseForbidden("Invalid request method")
-    if not request.user.is_superuser:
-        return HttpResponseForbidden("Only admin can manage AppRole.")
+    if not user_has_feature(request.user, "policy"):
+        return HttpResponseForbidden("You do not have policy engine feature access.")
 
     name = (request.POST.get("name") or "").strip()
     if not name:
@@ -1298,8 +1264,8 @@ def save_approle(request):
 def save_jwt_workload_identity(request):
     if request.method != "POST":
         return HttpResponseForbidden("Invalid request method")
-    if not request.user.is_superuser:
-        return HttpResponseForbidden("Only admin can manage JWT identities.")
+    if not user_has_feature(request.user, "policy"):
+        return HttpResponseForbidden("You do not have policy engine feature access.")
 
     name = (request.POST.get("name") or "").strip()
     if not name:
@@ -1326,8 +1292,8 @@ def save_jwt_workload_identity(request):
 def save_machine_auth_document(request):
     if request.method != "POST":
         return HttpResponseForbidden("Invalid request method")
-    if not request.user.is_superuser:
-        return HttpResponseForbidden("Only admin can manage machine auth.")
+    if not user_has_feature(request.user, "policy"):
+        return HttpResponseForbidden("You do not have policy engine feature access.")
 
     raw = (request.POST.get("machine_auth_document") or "").strip()
     doc_format = (request.POST.get("machine_auth_format") or "json").strip().lower()

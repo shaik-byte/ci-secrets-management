@@ -5,12 +5,13 @@ from django.shortcuts import render
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponseForbidden
 from .models import AuditLog
+from vault_dashboard.feature_access import user_has_feature
 
 
 @login_required
 def audit_dashboard(request):
-    if not request.user.is_superuser:
-        return HttpResponseForbidden("Only admin can access audit logs.")
+    if not user_has_feature(request.user, "audit_logs"):
+        return HttpResponseForbidden("You do not have audit logs feature access.")
 
     logs = AuditLog.objects.all().order_by('-timestamp')[:200]
 
