@@ -1378,6 +1378,59 @@ document.addEventListener("DOMContentLoaded", function () {
     syncState();
 });
 
+function isSecretsAjaxForm(form) {
+    if (!form || !form.action) return false;
+    const action = form.action;
+    const managedActions = [
+        "add-environment",
+        "add-folder",
+        "add-secret",
+        "delete-environment",
+        "delete-folder",
+        "delete-secret",
+        "toggle-delete-approval",
+        "toggle-secret-access",
+    ];
+    return managedActions.some((fragment) => action.includes(fragment));
+}
+
+async function refreshContentArea(sectionName = "secrets") {
+    const response = await fetch(window.location.href, {
+        headers: { "X-Requested-With": "XMLHttpRequest" },
+        credentials: "same-origin",
+    });
+    const html = await response.text();
+    const parsed = new DOMParser().parseFromString(html, "text/html");
+    const newContent = parsed.querySelector(".content-area");
+    const currentContent = document.querySelector(".content-area");
+    if (newContent && currentContent) {
+        currentContent.innerHTML = newContent.innerHTML;
+        showSection(sectionName);
+    }
+}
+
+document.addEventListener("submit", async function (event) {
+    const form = event.target;
+    if (!isSecretsAjaxForm(form)) return;
+
+    event.preventDefault();
+    const formData = new FormData(form);
+
+    try {
+        await fetch(form.action, {
+            method: form.method || "POST",
+            body: formData,
+            headers: { "X-Requested-With": "XMLHttpRequest" },
+            credentials: "same-origin",
+            redirect: "follow",
+        });
+        await refreshContentArea("secrets");
+    } catch (error) {
+        console.error("Action failed:", error);
+        window.alert("Something went wrong while saving. Please try again.");
+    }
+});
+
 function resetAccessPolicyForm() {
     const policyId = document.getElementById("access-policy-id");
     const user = document.getElementById("access-user-id");
