@@ -254,13 +254,20 @@
                 <label class="form-check-label" for="apply-all-environments">Apply All Environments</label>
             </div>
             <div class="col-md-12">
-                <label class="form-label">Or select environments</label>
-                <select name="environment_ids" id="environment-select" class="form-select" multiple size="5">
+                <label class="form-label mb-2">Or select environments</label>
+                <div id="environment-checkboxes" class="border rounded p-2" style="max-height: 180px; overflow-y: auto;">
                     {% for env in setting_environments %}
-                    <option value="{{ env.id }}">{{ env.name }}</option>
+                    <div class="form-check">
+                        <input class="form-check-input env-checkbox" type="checkbox" name="environment_ids" value="{{ env.id }}" id="env-checkbox-{{ env.id }}">
+                        <label class="form-check-label" for="env-checkbox-{{ env.id }}">
+                            {{ env.name }}
+                        </label>
+                    </div>
+                    {% empty %}
+                    <div class="text-muted small">No environments available.</div>
                     {% endfor %}
-                </select>
-                <small class="text-muted">Tip: Hold Ctrl/Cmd to select multiple environments.</small>
+                </div>
+                <small class="text-muted">Select one or more environments, or choose Apply All Environments.</small>
             </div>
             <div class="col-md-3">
                 <button type="submit" class="btn btn-primary w-100">Save Regex</button>
@@ -1339,11 +1346,13 @@ function showSection(section) {
 
 document.addEventListener("DOMContentLoaded", function () {
     const applyAllCheckbox = document.getElementById("apply-all-environments");
-    const envSelect = document.getElementById("environment-select");
-    if (!applyAllCheckbox || !envSelect) return;
+    const envCheckboxes = document.querySelectorAll(".env-checkbox");
+    if (!applyAllCheckbox || !envCheckboxes.length) return;
 
     const syncState = () => {
-        envSelect.disabled = applyAllCheckbox.checked;
+        envCheckboxes.forEach((checkbox) => {
+            checkbox.disabled = applyAllCheckbox.checked;
+        });
     };
     applyAllCheckbox.addEventListener("change", syncState);
     syncState();
