@@ -125,9 +125,11 @@
         <button id="nav-secrets" class="sidebar-item" type="button" onclick="showSection('secrets')">
             Secrets Manager
         </button>
+        {% if request.user.is_superuser %}
         <button id="nav-settings" class="sidebar-item" type="button" onclick="showSection('settings')">
             Settings
         </button>
+        {% endif %}
         {% if request.user.is_superuser %}
         <button id="nav-policy" class="sidebar-item" type="button" onclick="showSection('policy')">
             Policy Engine
@@ -218,6 +220,7 @@
     {% endif %}
 </div>
 
+{% if request.user.is_superuser %}
 <div id="section-settings" class="container mt-1" style="display:none;">
     <div class="card p-4 mb-4 shadow-sm">
         <h5 class="mb-3">Secret Validation Settings</h5>
@@ -241,6 +244,7 @@
         </form>
     </div>
 </div>
+{% endif %}
 
 {% if request.user.is_superuser %}
 <div id="section-policy" class="container mt-1" style="display:none;">

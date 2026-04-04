@@ -686,6 +686,9 @@ def toggle_environment_delete_approval(request, env_id):
 
 @login_required
 def save_secret_policy(request):
+    if not request.user.is_superuser:
+        return HttpResponseForbidden("Only admin can update secret policy settings.")
+
     if request.method == "POST":
         pattern = (request.POST.get("secret_value_regex") or "").strip()
         regex_mode = (request.POST.get("regex_mode") or "match").strip()
