@@ -143,6 +143,7 @@ from django.db.models import Q
 from django.db import transaction
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_GET
 from datetime import datetime, timedelta
 from fnmatch import fnmatch
 import json
@@ -483,6 +484,87 @@ def reveal_secret(request, secret_id):
     )
 
     return JsonResponse({"secret": decrypted})
+
+
+def _within_search_rate_limit(user_id, limit=30, window_seconds=60):
+    cache_key = f"secret-path-search:{user_id}"
+    current = cache.get(cache_key, 0)
+    if current >= limit:
+        return False
+    cache.set(cache_key, current + 1, timeout=window_seconds)
+    return True
+
+
+@login_required
+@require_GET
+def search_secret_paths(request):
+    if "vault_key" not in request.session:
+        return JsonResponse({"error": "Vault is sealed for this session."}, status=403)
+
+    if not _within_search_rate_limit(request.user.id):
+        return JsonResponse({"error": "Too many search requests. Please retry shortly."}, status=429)
+
+    query = (request.GET.get("q") or "").strip()
+    mode = (request.GET.get("mode") or "name").strip().lower()
+    if mode not in {"name", "value_exact"}:
+        mode = "name"
+
+    if len(query) < 2:
+        return JsonResponse({"error": "Enter at least 2 characters to search."}, status=400)
+    if len(query) > 200:
+        return JsonResponse({"error": "Search query is too long."}, status=400)
+
+    search_scope = Secret.objects.select_related("folder", "folder__environment").order_by("name")
+    if mode == "name":
+        search_scope = search_scope.filter(
+            Q(name__icontains=query)
+            | Q(service_name__icontains=query)
+            | Q(folder__name__icontains=query)
+            | Q(folder__environment__name__icontains=query)
+        )
+
+    max_scan = 600 if mode == "name" else 250
+    scanned = 0
+    matches = []
+    for secret in search_scope[:max_scan]:
+        scanned += 1
+        if not _has_access(request.user, "read", secret=secret):
+            continue
+
+        if mode == "value_exact":
+            try:
+                candidate = decrypt_value(request, secret.encrypted_value)
+            except Exception:
+                continue
+            if not secrets.compare_digest(candidate, query):
+                continue
+
+        matches.append({
+            "secret_id": secret.id,
+            "environment": secret.folder.environment.name,
+            "folder": secret.folder.name,
+            "secret_name": secret.name,
+            "service_name": secret.service_name,
+            "path": f"{secret.folder.environment.name}/{secret.folder.name}/{secret.name}",
+            "reveal_enabled": bool(secret.is_access_enabled or request.user.is_superuser),
+        })
+        if len(matches) >= 50:
+            break
+
+    AuditLog.objects.create(
+        user=request.user,
+        action="READ",
+        entity="SecretSearch",
+        details=f"Searched secret paths using mode={mode}, query_len={len(query)}, results={len(matches)}",
+        ip_address=get_client_ip(request),
+    )
+
+    return JsonResponse({
+        "results": matches,
+        "mode": mode,
+        "count": len(matches),
+        "truncated": len(matches) >= 50 or scanned >= max_scan,
+    })
 
 
 @login_required

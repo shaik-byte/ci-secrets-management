@@ -7,6 +7,7 @@ urlpatterns = [
     path('add-folder/<int:env_id>/', views.add_folder, name="add_folder"),
     path('add-secret/<int:folder_id>/', views.add_secret, name="add_secret"),
     path('reveal-secret/<int:secret_id>/', views.reveal_secret, name="reveal_secret"),
+    path('search-secret-paths/', views.search_secret_paths, name="search_secret_paths"),
     path('toggle-secret-access/<int:secret_id>/', views.toggle_secret_access, name="toggle_secret_access"),
     path('settings/save-secret-policy/', views.save_secret_policy, name="save_secret_policy"),
     path('settings/save-feature-access/', views.save_feature_access, name="save_feature_access"),

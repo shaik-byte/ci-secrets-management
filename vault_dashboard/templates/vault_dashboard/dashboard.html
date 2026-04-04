@@ -208,6 +208,16 @@
             align-items: center;
             margin-right: 0.75rem;
         }
+
+        .secret-path-search .result-path {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            font-size: 0.86rem;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 0.25rem 0.5rem;
+            display: inline-block;
+        }
     </style>
 </head>
 
@@ -297,6 +307,44 @@
     <div id="welcome-panel" class="card p-4 mb-4 shadow-sm text-center">
         <h5 class="mb-2">Choose a module from the sidebar</h5>
         <p class="text-muted mb-0">Click <strong>Secrets Manager</strong> to load all secrets on the right side.</p>
+    </div>
+
+    <div id="secret-path-search-panel" class="card p-4 mb-4 shadow-sm secret-path-search">
+        <h5 class="mb-2">Find secret location</h5>
+        <p class="text-muted mb-3">Search by secret metadata (name/service/path) or exact secret value. Results only include secrets you can read.</p>
+        <form id="secret-path-search-form" class="row g-2 align-items-end">
+            <div class="col-md-7">
+                <label for="secret-path-query" class="form-label">Search</label>
+                <input id="secret-path-query" name="q" type="text" maxlength="200" class="form-control" placeholder="Example: STRIPE_API_KEY or exact value">
+            </div>
+            <div class="col-md-3">
+                <label for="secret-path-mode" class="form-label">Mode</label>
+                <select id="secret-path-mode" name="mode" class="form-select">
+                    <option value="name">Name / service / path</option>
+                    <option value="value_exact">Exact secret value</option>
+                </select>
+            </div>
+            <div class="col-md-2 d-grid">
+                <button type="submit" class="btn btn-primary">Search</button>
+            </div>
+            <div class="col-12">
+                <small class="text-muted">Tip: value search is exact match only and does not reveal the secret, only its location.</small>
+            </div>
+        </form>
+        <div id="secret-path-search-feedback" class="small mt-3 text-muted"></div>
+        <div class="table-responsive mt-2 d-none" id="secret-path-search-results-wrap">
+            <table class="table table-sm align-middle">
+                <thead>
+                    <tr>
+                        <th>Secret</th>
+                        <th>Service</th>
+                        <th>Location</th>
+                        <th>Quick Action</th>
+                    </tr>
+                </thead>
+                <tbody id="secret-path-search-results"></tbody>
+            </table>
+        </div>
     </div>
 
 </div>
@@ -1600,6 +1648,103 @@ function toggleSecret(id) {
     }
 }
 
+async function searchSecretPaths(event) {
+    event.preventDefault();
+    const queryInput = document.getElementById("secret-path-query");
+    const modeInput = document.getElementById("secret-path-mode");
+    const feedback = document.getElementById("secret-path-search-feedback");
+    const resultsWrap = document.getElementById("secret-path-search-results-wrap");
+    const resultsBody = document.getElementById("secret-path-search-results");
+    if (!queryInput || !modeInput || !feedback || !resultsWrap || !resultsBody) return;
+
+    const query = queryInput.value.trim();
+    const mode = modeInput.value;
+    if (query.length < 2) {
+        feedback.textContent = "Please enter at least 2 characters.";
+        feedback.className = "small mt-3 text-danger";
+        resultsWrap.classList.add("d-none");
+        return;
+    }
+
+    feedback.textContent = "Searching…";
+    feedback.className = "small mt-3 text-muted";
+
+    try {
+        const params = new URLSearchParams({ q: query, mode });
+        const res = await fetch(`/secrets/search-secret-paths/?${params.toString()}`, {
+            headers: { "X-Requested-With": "XMLHttpRequest" },
+            credentials: "same-origin",
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            feedback.textContent = data.error || "Search failed. Please try again.";
+            feedback.className = "small mt-3 text-danger";
+            resultsWrap.classList.add("d-none");
+            return;
+        }
+
+        resultsBody.innerHTML = "";
+        if (!data.results || data.results.length === 0) {
+            feedback.textContent = "No matching secrets were found in your accessible scope.";
+            feedback.className = "small mt-3 text-muted";
+            resultsWrap.classList.add("d-none");
+            return;
+        }
+
+        data.results.forEach((item) => {
+            const row = document.createElement("tr");
+            const secretTd = document.createElement("td");
+            const secretStrong = document.createElement("strong");
+            secretStrong.textContent = item.secret_name || "—";
+            secretTd.appendChild(secretStrong);
+
+            const serviceTd = document.createElement("td");
+            serviceTd.textContent = item.service_name || "—";
+
+            const locationTd = document.createElement("td");
+            const locationPill = document.createElement("span");
+            locationPill.className = "result-path";
+            locationPill.textContent = item.path || "—";
+            locationTd.appendChild(locationPill);
+
+            const actionTd = document.createElement("td");
+            if (item.reveal_enabled) {
+                const openBtn = document.createElement("button");
+                openBtn.type = "button";
+                openBtn.className = "btn btn-outline-primary btn-sm";
+                openBtn.textContent = "Open";
+                openBtn.addEventListener("click", () => {
+                    showSection("secrets");
+                    window.setTimeout(() => {
+                        document.getElementById(`secret-${item.secret_id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+                    }, 180);
+                });
+                actionTd.appendChild(openBtn);
+            } else {
+                const lockedBadge = document.createElement("span");
+                lockedBadge.className = "badge text-bg-secondary";
+                lockedBadge.textContent = "Reveal locked";
+                actionTd.appendChild(lockedBadge);
+            }
+
+            row.appendChild(secretTd);
+            row.appendChild(serviceTd);
+            row.appendChild(locationTd);
+            row.appendChild(actionTd);
+            resultsBody.appendChild(row);
+        });
+        resultsWrap.classList.remove("d-none");
+        const truncatedText = data.truncated ? " Showing top matches only." : "";
+        feedback.textContent = `Found ${data.count} match(es).${truncatedText}`;
+        feedback.className = "small mt-3 text-success";
+    } catch (error) {
+        console.error("Secret path search failed:", error);
+        feedback.textContent = "Search failed due to a network error.";
+        feedback.className = "small mt-3 text-danger";
+        resultsWrap.classList.add("d-none");
+    }
+}
+
 
 function attachSecretRegexValidation() {
     document.querySelectorAll("form.secret-form").forEach(form => {
@@ -1634,6 +1779,7 @@ function attachSecretRegexValidation() {
 
 showSection("dashboard");
 attachSecretRegexValidation();
+document.getElementById("secret-path-search-form")?.addEventListener("submit", searchSecretPaths);
 </script>
 
 </body>
