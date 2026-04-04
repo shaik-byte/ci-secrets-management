@@ -58,10 +58,10 @@
         }
 
         .sidebar {
-            width: 240px;
-            background: linear-gradient(180deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.98) 100%);
+            width: 230px;
+            background: linear-gradient(180deg, #0b1324 0%, #111f38 55%, #17233b 100%);
             border-right: 1px solid rgba(148, 163, 184, 0.2);
-            padding: 22px 14px;
+            padding: 20px 12px;
             position: sticky;
             top: 0;
             height: 100vh;
@@ -83,11 +83,12 @@
             width: 100%;
             border: 0;
             text-align: left;
-            padding: 12px 12px;
+            padding: 10px 12px;
             border-radius: 10px;
             background: transparent;
             color: #cbd5e1;
             font-weight: 600;
+            font-size: 0.95rem;
             transition: all 0.2s ease;
         }
 
@@ -143,8 +144,9 @@
         .secret-action-cell {
             display: flex;
             gap: 0.4rem;
-            flex-wrap: wrap;
+            flex-wrap: nowrap;
             align-items: center;
+            justify-content: flex-start;
         }
 
         #section-secrets .btn {
@@ -187,7 +189,7 @@
         }
 
         #section-secrets .secret-action-cell .btn {
-            min-width: 88px;
+            min-width: 74px;
             justify-content: center;
         }
 
@@ -1324,6 +1326,12 @@
                                                     <span class="badge bg-secondary">Admin Locked</span>
                                                     {% endif %}
 
+                                                    <button class="btn btn-outline-danger btn-sm"
+                                                            data-bs-toggle="modal"
+                                                            data-bs-target="#deleteSecretModal{{ secret.id }}">
+                                                        Delete
+                                                    </button>
+
                                                     {% if request.user.is_superuser %}
                                                     <form method="POST" action="{% url 'toggle_secret_access' secret.id %}">
                                                         {% csrf_token %}
@@ -1332,12 +1340,6 @@
                                                         </button>
                                                     </form>
                                                     {% endif %}
-
-                                                    <button class="btn btn-outline-danger btn-sm"
-                                                            data-bs-toggle="modal"
-                                                            data-bs-target="#deleteSecretModal{{ secret.id }}">
-                                                        Delete
-                                                    </button>
                                                 </td>
                                             </tr>
 
