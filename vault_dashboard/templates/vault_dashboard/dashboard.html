@@ -1737,6 +1737,29 @@ async function searchSecretPaths(event) {
     }
 }
 
+function clearSecretPathSearchResults() {
+    const feedback = document.getElementById("secret-path-search-feedback");
+    const resultsWrap = document.getElementById("secret-path-search-results-wrap");
+    const resultsBody = document.getElementById("secret-path-search-results");
+    if (feedback) {
+        feedback.textContent = "";
+        feedback.className = "small mt-3 text-muted";
+    }
+    if (resultsBody) {
+        resultsBody.innerHTML = "";
+    }
+    if (resultsWrap) {
+        resultsWrap.classList.add("d-none");
+    }
+}
+
+function handleSecretPathQueryInput(event) {
+    const value = (event?.target?.value || "").trim();
+    if (!value) {
+        clearSecretPathSearchResults();
+    }
+}
+
 
 function attachSecretRegexValidation() {
     document.querySelectorAll("form.secret-form").forEach(form => {
@@ -1772,6 +1795,7 @@ function attachSecretRegexValidation() {
 showSection("dashboard");
 attachSecretRegexValidation();
 document.getElementById("secret-path-search-form")?.addEventListener("submit", searchSecretPaths);
+document.getElementById("secret-path-query")?.addEventListener("input", handleSecretPathQueryInput);
 </script>
 
 </body>
