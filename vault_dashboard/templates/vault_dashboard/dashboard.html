@@ -1403,7 +1403,15 @@ async function refreshContentArea(sectionName = "secrets") {
     if (newContent && currentContent) {
         currentContent.innerHTML = newContent.innerHTML;
         showSection(sectionName);
+        clearModalArtifacts();
     }
+}
+
+function clearModalArtifacts() {
+    document.querySelectorAll(".modal-backdrop").forEach((backdrop) => backdrop.remove());
+    document.body.classList.remove("modal-open");
+    document.body.style.removeProperty("overflow");
+    document.body.style.removeProperty("padding-right");
 }
 
 document.addEventListener("submit", async function (event) {
@@ -1413,8 +1421,17 @@ document.addEventListener("submit", async function (event) {
     event.preventDefault();
     const formData = new FormData(form);
     const activeSection = localStorage.getItem("vault_active_section") || "dashboard";
+    const modalElement = form.closest(".modal");
 
     try {
+        if (modalElement && window.bootstrap?.Modal) {
+            const modalInstance = bootstrap.Modal.getInstance(modalElement);
+            if (modalInstance) {
+                modalInstance.hide();
+            }
+            clearModalArtifacts();
+        }
+
         await fetch(form.action, {
             method: form.method || "POST",
             body: formData,
