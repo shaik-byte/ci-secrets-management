@@ -528,6 +528,8 @@ def search_secret_paths(request):
 
         matches.append({
             "secret_id": secret.id,
+            "environment_id": secret.folder.environment_id,
+            "folder_id": secret.folder_id,
             "environment": secret.folder.environment.name,
             "folder": secret.folder.name,
             "secret_name": secret.name,
@@ -600,6 +602,8 @@ def search_expiring_secrets(request):
 
         matches.append({
             "secret_id": secret.id,
+            "environment_id": secret.folder.environment_id,
+            "folder_id": secret.folder_id,
             "environment": secret.folder.environment.name,
             "folder": secret.folder.name,
             "secret_name": secret.name,

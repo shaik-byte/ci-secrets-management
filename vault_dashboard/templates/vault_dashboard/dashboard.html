@@ -1684,6 +1684,34 @@ function toggleSecret(id) {
     }
 }
 
+function openSecretLocation(item) {
+    showSection("secrets");
+
+    const expandCollapse = (collapseId) => {
+        const collapseEl = document.getElementById(collapseId);
+        if (!collapseEl) return;
+        if (window.bootstrap?.Collapse) {
+            bootstrap.Collapse.getOrCreateInstance(collapseEl, { toggle: false }).show();
+        } else {
+            collapseEl.classList.add("show");
+        }
+    };
+
+    window.setTimeout(() => {
+        if (item.environment_id) {
+            expandCollapse(`collapseEnv${item.environment_id}`);
+        }
+        window.setTimeout(() => {
+            if (item.folder_id) {
+                expandCollapse(`collapseFolder${item.folder_id}`);
+            }
+            window.setTimeout(() => {
+                document.getElementById(`secret-${item.secret_id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+            }, 160);
+        }, 180);
+    }, 80);
+}
+
 async function searchSecretPaths(event) {
     event.preventDefault();
     const queryInput = document.getElementById("secret-path-query");
@@ -1747,12 +1775,7 @@ async function searchSecretPaths(event) {
                 openBtn.type = "button";
                 openBtn.className = "btn btn-outline-primary btn-sm";
                 openBtn.textContent = "Open";
-                openBtn.addEventListener("click", () => {
-                    showSection("secrets");
-                    window.setTimeout(() => {
-                        document.getElementById(`secret-${item.secret_id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
-                    }, 180);
-                });
+                openBtn.addEventListener("click", () => openSecretLocation(item));
                 actionTd.appendChild(openBtn);
             } else {
                 const lockedBadge = document.createElement("span");
@@ -1906,12 +1929,7 @@ async function searchExpiringSecrets(event) {
             openBtn.type = "button";
             openBtn.className = "btn btn-outline-primary btn-sm";
             openBtn.textContent = "Open";
-            openBtn.addEventListener("click", () => {
-                showSection("secrets");
-                window.setTimeout(() => {
-                    document.getElementById(`secret-${item.secret_id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
-                }, 180);
-            });
+            openBtn.addEventListener("click", () => openSecretLocation(item));
             actionTd.appendChild(openBtn);
 
             row.appendChild(secretTd);
