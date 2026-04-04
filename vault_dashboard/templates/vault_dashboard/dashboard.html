@@ -111,6 +111,41 @@
         .policy-doc-editor::placeholder {
             color: #9ca3af !important;
         }
+
+        .env-controls {
+            min-width: 220px;
+            justify-content: flex-end;
+        }
+
+        .env-approval-switch .form-check-input {
+            margin-top: 0;
+        }
+
+        .env-approval-switch .form-check-label {
+            font-size: 0.82rem !important;
+            font-weight: 600;
+            line-height: 1.1;
+            white-space: nowrap;
+        }
+
+        .folder-create-form .form-control,
+        .folder-create-form .btn,
+        .secret-form .form-control,
+        .secret-form .btn {
+            min-height: 38px;
+        }
+
+        .secret-table th,
+        .secret-table td {
+            vertical-align: middle;
+        }
+
+        .secret-action-cell {
+            display: flex;
+            gap: 0.4rem;
+            flex-wrap: wrap;
+            align-items: center;
+        }
     </style>
 </head>
 
@@ -1039,11 +1074,11 @@
                     {% endif %}
                 </button>
 
-                <div class="d-flex align-items-center gap-2 me-3">
+                <div class="d-flex align-items-center gap-2 me-3 env-controls">
                     {% if request.user.is_superuser %}
                     <form method="POST" action="{% url 'toggle_environment_delete_approval' env.id %}">
                         {% csrf_token %}
-                        <div class="form-check form-switch m-0">
+                        <div class="form-check form-switch m-0 env-approval-switch">
                             <input
                                 class="form-check-input"
                                 type="checkbox"
@@ -1111,11 +1146,17 @@
                     <!-- ADD FOLDER -->
                     <form method="POST"
                           action="{% url 'add_folder' env.id %}"
-                          class="d-flex gap-2 mb-3">
+                          class="row g-2 mb-3 folder-create-form align-items-center">
                         {% csrf_token %}
-                        <input type="text" name="name" class="form-control" placeholder="Folder Name" required>
-                        <input type="email" name="owner_email" class="form-control" placeholder="Folder Owner Email">
-                        <button type="submit" class="btn btn-secondary btn-sm">Add Folder</button>
+                        <div class="col-md-5">
+                            <input type="text" name="name" class="form-control" placeholder="Folder Name" required>
+                        </div>
+                        <div class="col-md-5">
+                            <input type="email" name="owner_email" class="form-control" placeholder="Folder Owner Email">
+                        </div>
+                        <div class="col-md-2">
+                            <button type="submit" class="btn btn-secondary w-100">Add Folder</button>
+                        </div>
                     </form>
 
                     <div class="accordion" id="folderAccordion{{ env.id }}">
@@ -1197,16 +1238,16 @@
                                         <div class="col-md-4">
                                             <input type="text" name="value" class="form-control" placeholder="Secret Value" required>
                                         </div>
-                                        <div class="col-md-1">
+                                        <div class="col-md-2">
                                             <input type="date" name="expire" class="form-control">
                                         </div>
-                                        <div class="col-md-1">
+                                        <div class="col-md-2">
                                             <button type="submit" class="btn btn-success w-100">Add Secret</button>
                                         </div>
                                     </form>
 
                                     <!-- SECRET TABLE -->
-                                    <table class="table table-sm table-striped align-middle">
+                                    <table class="table table-sm table-striped align-middle secret-table">
                                         <thead class="table-dark">
                                             <tr>
                                                 <th>Name</th>
@@ -1225,7 +1266,7 @@
                                                     <span id="secret-{{ secret.id }}" class="secret-value">******</span>
                                                 </td>
                                                 <td>{{ secret.expire_date }}</td>
-                                                <td class="d-flex gap-2 flex-wrap">
+                                                <td class="secret-action-cell">
                                                     {% if secret.is_access_enabled or request.user.is_superuser %}
                                                     <button class="btn btn-outline-primary btn-sm"
                                                             onclick="toggleSecret({{ secret.id }})">
