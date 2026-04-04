@@ -344,7 +344,6 @@ def dashboard(request):
         "new_approle_role_name": request.session.pop("new_approle_role_name", None),
         "pending_deletion_approvals": DeletionApprovalRequest.objects.select_related("requested_by").filter(status="pending")[:100] if "approvals" in visible_feature_keys else [],
         "recent_deletion_approvals": DeletionApprovalRequest.objects.select_related("requested_by", "approver").exclude(status="pending")[:100] if "approvals" in visible_feature_keys else [],
-        "recent_user_creations": AuditLog.objects.select_related("user").filter(action="CREATE", user__is_superuser=False).order_by("-timestamp")[:20] if request.user.is_superuser else [],
         "can_view_secrets": "secrets" in visible_feature_keys,
         "can_view_settings": "settings" in visible_feature_keys,
         "can_view_policy": "policy" in visible_feature_keys,
