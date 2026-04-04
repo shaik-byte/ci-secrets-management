@@ -341,7 +341,7 @@
         <h5 class="mb-2">About to expire secrets</h5>
         <p class="text-muted mb-3">Find readable secrets that expire on a selected date filter.</p>
         <form id="expiring-secrets-form" class="row g-2 align-items-end">
-            <div class="col-md-4">
+            <div class="col-md-5">
                 <label for="expiring-secret-window" class="form-label">Filter</label>
                 <select id="expiring-secret-window" name="window" class="form-select">
                     <option value="today">Today</option>
@@ -350,12 +350,12 @@
                     <option value="custom">Custom date</option>
                 </select>
             </div>
-            <div class="col-md-4 d-none" id="expiring-secret-custom-date-wrap">
+            <div class="col-md-5 d-none" id="expiring-secret-custom-date-wrap">
                 <label for="expiring-secret-custom-date" class="form-label">Custom date</label>
                 <input id="expiring-secret-custom-date" name="custom_date" type="date" class="form-control">
             </div>
-            <div class="col-md-4 d-grid">
-                <button type="submit" class="btn btn-primary">Search expiring secrets</button>
+            <div class="col-md-2 d-grid">
+                <button type="submit" class="btn btn-primary">Search</button>
             </div>
         </form>
         <div id="expiring-secrets-feedback" class="small mt-3 text-muted"></div>
