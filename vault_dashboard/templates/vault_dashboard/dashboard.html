@@ -151,12 +151,14 @@
             <span class="badge rounded-pill text-bg-light" title="Logged in user">
                 👤 {{ request.user.username }}
             </span>
+            {% if request.user.is_superuser %}
             <a href="{% url 'notifications' %}" class="btn btn-outline-primary btn-sm">
                 📧 Notifications
             </a>
             <a href="{% url 'audit_dashboard' %}" class="btn btn-outline-dark btn-sm">
                 📜 Audit Logs
             </a>
+            {% endif %}
 
             {% if request.user.is_superuser %}
             <form method="POST" action="{% url 'seal' %}" class="d-inline">
