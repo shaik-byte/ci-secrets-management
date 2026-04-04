@@ -354,7 +354,6 @@ def dashboard(request):
         "can_view_seal_vault": "seal_vault" in visible_feature_keys,
         "feature_rows": feature_rows,
         "setting_environments": _manageable_environments_for_settings(request.user).order_by("name"),
-        "all_env_approval_enabled": bool(environments) and all(env.require_admin_delete_approval for env in environments),
     })
 
 
@@ -737,28 +736,6 @@ def toggle_environment_delete_approval(request, env_id):
         ip_address=get_client_ip(request)
     )
     messages.success(request, f"Manual delete approval {state} for environment '{env.name}'.")
-    return redirect("vault_dashboard")
-
-
-@login_required
-def set_all_environment_delete_approval(request):
-    if request.method != "POST":
-        return HttpResponseForbidden("Invalid request method")
-    if not request.user.is_superuser:
-        return HttpResponseForbidden("Only admin can change global approval mode.")
-
-    enable_all = bool(request.POST.get("enable_all"))
-    updated = Environment.objects.all().update(require_admin_delete_approval=enable_all)
-    state = "enabled" if enable_all else "disabled"
-
-    AuditLog.objects.create(
-        user=request.user,
-        action='UPDATE',
-        entity='Environment',
-        details=f"Admin {state} manual delete approval mode for all environments ({updated} updated)",
-        ip_address=get_client_ip(request)
-    )
-    messages.success(request, f"Manual delete approval {state} for all environments ({updated} updated).")
     return redirect("vault_dashboard")
 
 
