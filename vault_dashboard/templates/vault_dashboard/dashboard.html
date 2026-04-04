@@ -115,6 +115,11 @@
 </head>
 
 <body>
+{{ session_state|json_script:"session-state-data" }}
+<script>
+    // Frontend-visible session/auth snapshot (derived from server session/user).
+    window.__SESSION_STATE__ = JSON.parse(document.getElementById("session-state-data").textContent);
+</script>
 
 <div class="app-shell">
     <aside class="sidebar">
