@@ -341,7 +341,7 @@
         <h5 class="mb-2">About to expire secrets</h5>
         <p class="text-muted mb-3">Find readable secrets that expire on a selected date filter.</p>
         <form id="expiring-secrets-form" class="row g-2 align-items-end">
-            <div class="col-md-8">
+            <div id="expiring-secret-window-wrap" class="col-md-10">
                 <label for="expiring-secret-window" class="form-label">Filter</label>
                 <select id="expiring-secret-window" name="window" class="form-select">
                     <option value="today">Today</option>
@@ -1804,10 +1804,13 @@ function handleSecretPathQueryInput(event) {
 
 function toggleExpiringSecretCustomDate() {
     const windowSelect = document.getElementById("expiring-secret-window");
+    const windowWrap = document.getElementById("expiring-secret-window-wrap");
     const customDateWrap = document.getElementById("expiring-secret-custom-date-wrap");
     const customDateInput = document.getElementById("expiring-secret-custom-date");
-    if (!windowSelect || !customDateWrap || !customDateInput) return;
+    if (!windowSelect || !windowWrap || !customDateWrap || !customDateInput) return;
     const isCustom = windowSelect.value === "custom";
+    windowWrap.classList.toggle("col-md-10", !isCustom);
+    windowWrap.classList.toggle("col-md-8", isCustom);
     customDateWrap.classList.toggle("d-none", !isCustom);
     customDateInput.required = isCustom;
     if (!isCustom) {
