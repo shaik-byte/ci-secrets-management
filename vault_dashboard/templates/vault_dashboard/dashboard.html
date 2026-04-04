@@ -1045,7 +1045,7 @@
                                 role="switch"
                                 id="approval-switch-env-{{ env.id }}"
                                 {% if env.require_admin_delete_approval %}checked{% endif %}
-                                onchange="this.form.submit()"
+                                onchange="this.form.requestSubmit ? this.form.requestSubmit() : this.form.submit()"
                             >
                             <label class="form-check-label text-muted" for="approval-switch-env-{{ env.id }}" style="font-size: 0.95rem; line-height: 1.2;">
                                 Enable Approval
