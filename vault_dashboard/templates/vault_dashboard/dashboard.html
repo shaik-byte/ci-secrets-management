@@ -196,6 +196,18 @@
         #section-secrets .secret-action-cell form {
             margin: 0;
         }
+
+        #section-secrets .folder-row-btn {
+            padding-right: 2.75rem;
+        }
+
+        #section-secrets .folder-header-actions {
+            min-width: 90px;
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            margin-right: 0.75rem;
+        }
     </style>
 </head>
 
@@ -1214,7 +1226,7 @@
                         <div class="accordion-item mb-2">
 
                             <h2 class="accordion-header d-flex justify-content-between align-items-center">
-                                <button class="accordion-button collapsed"
+                                <button class="accordion-button collapsed folder-row-btn"
                                         type="button"
                                         data-bs-toggle="collapse"
                                         data-bs-target="#collapseFolder{{ folder.id }}">
@@ -1223,11 +1235,13 @@
                                     <span class="badge bg-light text-dark ms-2">Owner: {{ folder.owner_email|default:"-" }}</span>
                                 </button>
 
-                                <button class="btn btn-outline-danger btn-sm me-3"
-                                        data-bs-toggle="modal"
-                                        data-bs-target="#deleteFolderModal{{ folder.id }}">
-                                    Delete
-                                </button>
+                                <div class="folder-header-actions">
+                                    <button class="btn btn-outline-danger btn-sm"
+                                            data-bs-toggle="modal"
+                                            data-bs-target="#deleteFolderModal{{ folder.id }}">
+                                        Delete
+                                    </button>
+                                </div>
                             </h2>
 
                             <!-- DELETE FOLDER MODAL -->
