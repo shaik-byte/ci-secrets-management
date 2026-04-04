@@ -168,6 +168,7 @@ from .models import (
     JWTWorkloadIdentity,
     MachineSessionToken,
     DeletionApprovalRequest,
+    UserFeatureAccess,
 )
 from .utils import encrypt_value, decrypt_value
 
@@ -175,6 +176,36 @@ from auditlogs.models import AuditLog
 
 MACHINE_SESSION_TTL_SECONDS = 3600
 JWKS_CACHE_TTL_SECONDS = 300
+
+FEATURE_CATALOG = [
+    {"key": "secrets", "label": "Secrets Manager", "default_enabled": True, "superuser_only": False},
+    {"key": "settings", "label": "Settings", "default_enabled": False, "superuser_only": True},
+    {"key": "policy", "label": "Policy Engine", "default_enabled": False, "superuser_only": True},
+    {"key": "approvals", "label": "Approvals", "default_enabled": False, "superuser_only": True},
+    {"key": "notifications", "label": "Notifications", "default_enabled": False, "superuser_only": True},
+    {"key": "audit_logs", "label": "Audit Logs", "default_enabled": False, "superuser_only": True},
+    {"key": "seal_vault", "label": "Seal Vault", "default_enabled": False, "superuser_only": True},
+]
+FEATURE_DEFAULTS = {item["key"]: item["default_enabled"] for item in FEATURE_CATALOG}
+SUPERUSER_ONLY_FEATURES = {item["key"] for item in FEATURE_CATALOG if item["superuser_only"]}
+
+
+def _resolve_user_feature_visibility(user):
+    if user.is_superuser:
+        return {item["key"] for item in FEATURE_CATALOG}
+
+    rules = {
+        row.feature_key: row.can_view
+        for row in UserFeatureAccess.objects.filter(user=user)
+    }
+    visible = set()
+    for item in FEATURE_CATALOG:
+        key = item["key"]
+        default_value = FEATURE_DEFAULTS.get(key, False)
+        if rules.get(key, default_value):
+            visible.add(key)
+
+    return visible
 
 
 def _action_field(action):
@@ -269,6 +300,30 @@ def dashboard(request):
     ]
 
     users = User.objects.order_by("username")
+    visible_feature_keys = _resolve_user_feature_visibility(request.user)
+    feature_rows = []
+    if request.user.is_superuser:
+        all_rules = UserFeatureAccess.objects.select_related("user").all()
+        rules_by_user = {}
+        for rule in all_rules:
+            rules_by_user.setdefault(rule.user_id, {})[rule.feature_key] = rule.can_view
+
+        for target_user in users:
+            explicit = rules_by_user.get(target_user.id, {})
+            row = []
+            for feature in FEATURE_CATALOG:
+                key = feature["key"]
+                default_enabled = feature["default_enabled"]
+                effective_enabled = True if target_user.is_superuser else explicit.get(key, default_enabled)
+                row.append({
+                    "key": key,
+                    "label": feature["label"],
+                    "enabled": effective_enabled,
+                    "superuser_only": feature["superuser_only"],
+                    "locked": target_user.is_superuser or feature["superuser_only"],
+                })
+            feature_rows.append({"user": target_user, "features": row})
+
     all_secrets = Secret.objects.select_related("folder", "folder__environment").order_by("name")
     effective_access_rows = []
     for user in users:
@@ -301,6 +356,14 @@ def dashboard(request):
         "pending_deletion_approvals": DeletionApprovalRequest.objects.select_related("requested_by").filter(status="pending")[:100] if request.user.is_superuser else [],
         "recent_deletion_approvals": DeletionApprovalRequest.objects.select_related("requested_by", "approver").exclude(status="pending")[:100] if request.user.is_superuser else [],
         "recent_user_creations": AuditLog.objects.select_related("user").filter(action="CREATE", user__is_superuser=False).order_by("-timestamp")[:20] if request.user.is_superuser else [],
+        "can_view_secrets": "secrets" in visible_feature_keys,
+        "can_view_settings": "settings" in visible_feature_keys,
+        "can_view_policy": "policy" in visible_feature_keys,
+        "can_view_approvals": "approvals" in visible_feature_keys,
+        "can_view_notifications": "notifications" in visible_feature_keys,
+        "can_view_audit_logs": "audit_logs" in visible_feature_keys,
+        "can_view_seal_vault": "seal_vault" in visible_feature_keys,
+        "feature_rows": feature_rows,
     })
 
 
@@ -710,6 +773,43 @@ def save_secret_policy(request):
 
         messages.success(request, "Secret regex policy saved successfully.")
 
+    return redirect("vault_dashboard")
+
+
+@login_required
+def save_feature_access(request):
+    if request.method != "POST":
+        return HttpResponseForbidden("Invalid request method")
+    if not request.user.is_superuser:
+        return HttpResponseForbidden("Only admin can manage feature visibility.")
+
+    user_id = request.POST.get("user_id")
+    target_user = get_object_or_404(User, id=user_id)
+    if target_user.is_superuser:
+        messages.info(request, "Superusers always retain access to all features.")
+        return redirect("vault_dashboard")
+
+    selected = set(request.POST.getlist("enabled_features"))
+    allowed_keys = set(FEATURE_DEFAULTS.keys())
+
+    with transaction.atomic():
+        for key in allowed_keys:
+            if key in SUPERUSER_ONLY_FEATURES:
+                UserFeatureAccess.objects.filter(user=target_user, feature_key=key).delete()
+                continue
+
+            desired = key in selected
+            default_value = FEATURE_DEFAULTS.get(key, False)
+            if desired == default_value:
+                UserFeatureAccess.objects.filter(user=target_user, feature_key=key).delete()
+            else:
+                UserFeatureAccess.objects.update_or_create(
+                    user=target_user,
+                    feature_key=key,
+                    defaults={"can_view": desired},
+                )
+
+    messages.success(request, f"Updated feature visibility for '{target_user.username}'.")
     return redirect("vault_dashboard")
 
 

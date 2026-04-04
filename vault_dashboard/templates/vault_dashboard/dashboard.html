@@ -122,20 +122,27 @@
         <button id="nav-dashboard" class="sidebar-item active" type="button" onclick="showSection('dashboard')">
             Dashboard
         </button>
+        {% if can_view_secrets %}
         <button id="nav-secrets" class="sidebar-item" type="button" onclick="showSection('secrets')">
             Secrets Manager
         </button>
-        {% if request.user.is_superuser %}
+        {% endif %}
+        {% if can_view_settings %}
         <button id="nav-settings" class="sidebar-item" type="button" onclick="showSection('settings')">
             Settings
         </button>
         {% endif %}
-        {% if request.user.is_superuser %}
+        {% if can_view_policy %}
         <button id="nav-policy" class="sidebar-item" type="button" onclick="showSection('policy')">
             Policy Engine
         </button>
         {% endif %}
         {% if request.user.is_superuser %}
+        <button id="nav-feature-core" class="sidebar-item" type="button" onclick="showSection('feature-core')">
+            Feature Core
+        </button>
+        {% endif %}
+        {% if can_view_approvals %}
         <button id="nav-approvals" class="sidebar-item" type="button" onclick="showSection('approvals')">
             Approvals
         </button>
@@ -151,16 +158,18 @@
             <span class="badge rounded-pill text-bg-light" title="Logged in user">
                 👤 {{ request.user.username }}
             </span>
-            {% if request.user.is_superuser %}
+            {% if can_view_notifications %}
             <a href="{% url 'notifications' %}" class="btn btn-outline-primary btn-sm">
                 📧 Notifications
             </a>
+            {% endif %}
+            {% if can_view_audit_logs %}
             <a href="{% url 'audit_dashboard' %}" class="btn btn-outline-dark btn-sm">
                 📜 Audit Logs
             </a>
             {% endif %}
 
-            {% if request.user.is_superuser %}
+            {% if can_view_seal_vault %}
             <form method="POST" action="{% url 'seal' %}" class="d-inline">
                 {% csrf_token %}
                 <button type="submit" class="btn btn-outline-danger btn-sm">
@@ -222,7 +231,7 @@
     {% endif %}
 </div>
 
-{% if request.user.is_superuser %}
+{% if can_view_settings %}
 <div id="section-settings" class="container mt-1" style="display:none;">
     <div class="card p-4 mb-4 shadow-sm">
         <h5 class="mb-3">Secret Validation Settings</h5>
@@ -249,6 +258,56 @@
 {% endif %}
 
 {% if request.user.is_superuser %}
+<div id="section-feature-core" class="container mt-1" style="display:none;">
+    <div class="card p-4 mb-4 shadow-sm">
+        <h5 class="mb-3">Feature Core</h5>
+        <p class="text-muted mb-3">Control which vault features are visible to each normal user. Superuser-only features are always admin-restricted.</p>
+        <div class="table-responsive">
+            <table class="table table-sm align-middle">
+                <thead>
+                    <tr>
+                        <th>User</th>
+                        <th>Feature Visibility</th>
+                        <th class="text-end">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in feature_rows %}
+                    <tr>
+                        <td>
+                            <strong>{{ row.user.username }}</strong>
+                            {% if row.user.is_superuser %}
+                            <span class="badge bg-dark ms-2">Superuser</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <form id="feature-form-{{ forloop.counter }}" method="POST" action="{% url 'save_feature_access' %}" class="d-flex flex-wrap gap-2 align-items-center">
+                                {% csrf_token %}
+                                <input type="hidden" name="user_id" value="{{ row.user.id }}">
+                                {% for feature in row.features %}
+                                <label class="form-check form-check-inline border rounded px-2 py-1 {% if feature.locked %}bg-light{% endif %}">
+                                    <input class="form-check-input" type="checkbox" name="enabled_features" value="{{ feature.key }}" {% if feature.enabled %}checked{% endif %} {% if feature.locked %}disabled{% endif %}>
+                                    <span class="form-check-label">{{ feature.label }}</span>
+                                    {% if feature.superuser_only %}
+                                    <span class="badge bg-secondary ms-1">Admin only</span>
+                                    {% endif %}
+                                </label>
+                                {% endfor %}
+                            </form>
+                        </td>
+                        <td class="text-end">
+                            <button type="submit" form="feature-form-{{ forloop.counter }}" class="btn btn-primary btn-sm" {% if row.user.is_superuser %}disabled{% endif %}>Save</button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if can_view_policy %}
 <div id="section-policy" class="container mt-1" style="display:none;">
     <div class="card p-4 mb-4 shadow-sm">
         <h5 class="mb-3">User Access Control (UI)</h5>
@@ -840,7 +899,7 @@
 </div>
 {% endif %}
 
-{% if request.user.is_superuser %}
+{% if can_view_approvals %}
 <div id="section-approvals" class="container mt-1" style="display:none;">
     <div class="card p-4 mb-4 shadow-sm">
         <h5 class="mb-2">Deletion Approvals</h5>
@@ -928,6 +987,7 @@
 </div>
 {% endif %}
 
+{% if can_view_secrets %}
 <div id="section-secrets" class="container mt-1" style="display:none;">
     <!-- ADD ENVIRONMENT -->
     <div class="card p-4 mb-4 shadow-sm">
@@ -1218,6 +1278,7 @@
         {% endfor %}
     </div>
 </div>
+{% endif %}
     </main>
 </div>
 
@@ -1225,11 +1286,12 @@
 
 <script>
 function showSection(section) {
-    const sections = ["secrets", "settings", "policy", "approvals"];
+    const sections = ["secrets", "settings", "feature-core", "policy", "approvals"];
     const sectionTitles = {
         dashboard: "Dashboard",
         secrets: "Secrets Manager",
         settings: "Settings",
+        "feature-core": "Feature Core",
         policy: "Policy Engine",
         approvals: "Approvals",
     };

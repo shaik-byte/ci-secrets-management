@@ -9,6 +9,7 @@ urlpatterns = [
     path('reveal-secret/<int:secret_id>/', views.reveal_secret, name="reveal_secret"),
     path('toggle-secret-access/<int:secret_id>/', views.toggle_secret_access, name="toggle_secret_access"),
     path('settings/save-secret-policy/', views.save_secret_policy, name="save_secret_policy"),
+    path('settings/save-feature-access/', views.save_feature_access, name="save_feature_access"),
     path('policy-engine/save-ui/', views.save_access_policy_ui, name="save_access_policy_ui"),
     path('policy-engine/save-document/', views.save_access_policy_document, name="save_access_policy_document"),
     path('policy-engine/delete/<int:policy_id>/', views.delete_access_policy, name="delete_access_policy"),

@@ -236,3 +236,19 @@ class DeletionApprovalRequest(models.Model):
 
     def __str__(self):
         return f"{self.target_type}:{self.target_name} ({self.status})"
+
+
+class UserFeatureAccess(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="feature_access_rules")
+    feature_key = models.CharField(max_length=64)
+    can_view = models.BooleanField(default=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("user", "feature_key")
+        indexes = [
+            models.Index(fields=["feature_key", "can_view"]),
+        ]
+
+    def __str__(self):
+        return f"{self.user.username}:{self.feature_key}={self.can_view}"
