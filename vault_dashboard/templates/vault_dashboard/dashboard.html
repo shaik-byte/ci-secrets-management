@@ -1441,6 +1441,7 @@ function showSection(section, options = {}) {
     };
 
     const welcome = document.getElementById("welcome-panel");
+    const secretPathSearchPanel = document.getElementById("secret-path-search-panel");
     const dashboardBtn = document.getElementById("nav-dashboard");
     const pageTitle = document.getElementById("page-title");
     const isDashboard = section === "dashboard" || !section;
@@ -1459,6 +1460,9 @@ function showSection(section, options = {}) {
 
     if (welcome) {
         welcome.style.display = isDashboard ? "block" : "none";
+    }
+    if (secretPathSearchPanel) {
+        secretPathSearchPanel.style.display = isDashboard ? "block" : "none";
     }
     const normalizedSection = isDashboard ? "dashboard" : section;
     if (pageTitle) {
