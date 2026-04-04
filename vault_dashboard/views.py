@@ -486,8 +486,8 @@ def reveal_secret(request, secret_id):
     return JsonResponse({"secret": decrypted})
 
 
-def _within_search_rate_limit(user_id, limit=30, window_seconds=60):
-    cache_key = f"secret-path-search:{user_id}"
+def _within_search_rate_limit(user_id, limit=30, window_seconds=60, namespace="secret-path-search"):
+    cache_key = f"{namespace}:{user_id}"
     current = cache.get(cache_key, 0)
     if current >= limit:
         return False
@@ -549,6 +549,83 @@ def search_secret_paths(request):
     return JsonResponse({
         "results": matches,
         "count": len(matches),
+        "truncated": len(matches) >= 50 or scanned >= max_scan,
+    })
+
+
+@login_required
+@require_GET
+def search_expiring_secrets(request):
+    if "vault_key" not in request.session:
+        return JsonResponse({"error": "Vault is sealed for this session."}, status=403)
+
+    if not _within_search_rate_limit(request.user.id, namespace="expiring-secret-search"):
+        return JsonResponse({"error": "Too many requests. Please retry shortly."}, status=429)
+
+    window = (request.GET.get("window") or "today").strip().lower()
+    custom_date_raw = (request.GET.get("custom_date") or "").strip()
+
+    today = timezone.now().date()
+    if window == "today":
+        target_date = today
+        window_label = "Today"
+    elif window == "3days":
+        target_date = today + timedelta(days=3)
+        window_label = "In 3 days"
+    elif window == "5days":
+        target_date = today + timedelta(days=5)
+        window_label = "In 5 days"
+    elif window == "custom":
+        if not custom_date_raw:
+            return JsonResponse({"error": "Please select a custom date."}, status=400)
+        try:
+            target_date = datetime.strptime(custom_date_raw, "%Y-%m-%d").date()
+        except ValueError:
+            return JsonResponse({"error": "Invalid custom date format. Use YYYY-MM-DD."}, status=400)
+        window_label = f"Custom ({target_date.isoformat()})"
+    else:
+        return JsonResponse({"error": "Invalid expiration filter."}, status=400)
+
+    search_scope = Secret.objects.select_related("folder", "folder__environment").filter(
+        expire_date=target_date
+    ).order_by("name")
+
+    max_scan = 600
+    scanned = 0
+    matches = []
+    for secret in search_scope[:max_scan]:
+        scanned += 1
+        if not _has_access(request.user, "read", secret=secret):
+            continue
+
+        matches.append({
+            "secret_id": secret.id,
+            "environment": secret.folder.environment.name,
+            "folder": secret.folder.name,
+            "secret_name": secret.name,
+            "service_name": secret.service_name,
+            "path": f"{secret.folder.environment.name}/{secret.folder.name}/{secret.name}",
+            "expire_date": secret.expire_date.isoformat() if secret.expire_date else "",
+            "days_until_expiry": (secret.expire_date - today).days if secret.expire_date else None,
+            "reveal_enabled": bool(secret.is_access_enabled or request.user.is_superuser),
+        })
+        if len(matches) >= 50:
+            break
+
+    AuditLog.objects.create(
+        user=request.user,
+        action="READ",
+        entity="SecretExpirySearch",
+        details=f"Searched expiring secrets, window={window}, target_date={target_date.isoformat()}, results={len(matches)}",
+        ip_address=get_client_ip(request),
+    )
+
+    return JsonResponse({
+        "results": matches,
+        "count": len(matches),
+        "window": window,
+        "window_label": window_label,
+        "target_date": target_date.isoformat(),
         "truncated": len(matches) >= 50 or scanned >= max_scan,
     })
 

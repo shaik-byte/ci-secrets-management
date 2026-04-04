@@ -209,7 +209,7 @@
             margin-right: 0.75rem;
         }
 
-        .secret-path-search .result-path {
+        .dashboard-search-card .result-path {
             font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
             font-size: 0.86rem;
             background: #f8fafc;
@@ -309,7 +309,7 @@
         <p class="text-muted mb-0">Click <strong>Secrets Manager</strong> to load all secrets on the right side.</p>
     </div>
 
-    <div id="secret-path-search-panel" class="card p-4 mb-4 shadow-sm secret-path-search">
+    <div id="secret-path-search-panel" class="card p-4 mb-4 shadow-sm dashboard-search-card">
         <h5 class="mb-2">Find secret location</h5>
         <p class="text-muted mb-3">Search by secret metadata (name/service/path). Results only include secrets you can read.</p>
         <form id="secret-path-search-form" class="row g-2 align-items-end">
@@ -333,6 +333,44 @@
                     </tr>
                 </thead>
                 <tbody id="secret-path-search-results"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div id="expiring-secrets-panel" class="card p-4 mb-4 shadow-sm dashboard-search-card">
+        <h5 class="mb-2">About to expire secrets</h5>
+        <p class="text-muted mb-3">Find readable secrets that expire on a selected date filter.</p>
+        <form id="expiring-secrets-form" class="row g-2 align-items-end">
+            <div class="col-md-4">
+                <label for="expiring-secret-window" class="form-label">Filter</label>
+                <select id="expiring-secret-window" name="window" class="form-select">
+                    <option value="today">Today</option>
+                    <option value="3days">In 3 days</option>
+                    <option value="5days">In 5 days</option>
+                    <option value="custom">Custom date</option>
+                </select>
+            </div>
+            <div class="col-md-4 d-none" id="expiring-secret-custom-date-wrap">
+                <label for="expiring-secret-custom-date" class="form-label">Custom date</label>
+                <input id="expiring-secret-custom-date" name="custom_date" type="date" class="form-control">
+            </div>
+            <div class="col-md-4 d-grid">
+                <button type="submit" class="btn btn-primary">Search expiring secrets</button>
+            </div>
+        </form>
+        <div id="expiring-secrets-feedback" class="small mt-3 text-muted"></div>
+        <div class="table-responsive mt-2 d-none" id="expiring-secrets-results-wrap">
+            <table class="table table-sm align-middle">
+                <thead>
+                    <tr>
+                        <th>Secret</th>
+                        <th>Service</th>
+                        <th>Location</th>
+                        <th>Expire Date</th>
+                        <th>Quick Action</th>
+                    </tr>
+                </thead>
+                <tbody id="expiring-secrets-results"></tbody>
             </table>
         </div>
     </div>
@@ -1442,6 +1480,7 @@ function showSection(section, options = {}) {
 
     const welcome = document.getElementById("welcome-panel");
     const secretPathSearchPanel = document.getElementById("secret-path-search-panel");
+    const expiringSecretsPanel = document.getElementById("expiring-secrets-panel");
     const dashboardBtn = document.getElementById("nav-dashboard");
     const pageTitle = document.getElementById("page-title");
     const isDashboard = section === "dashboard" || !section;
@@ -1463,6 +1502,9 @@ function showSection(section, options = {}) {
     }
     if (secretPathSearchPanel) {
         secretPathSearchPanel.style.display = isDashboard ? "block" : "none";
+    }
+    if (expiringSecretsPanel) {
+        expiringSecretsPanel.style.display = isDashboard ? "block" : "none";
     }
     const normalizedSection = isDashboard ? "dashboard" : section;
     if (pageTitle) {
@@ -1760,6 +1802,135 @@ function handleSecretPathQueryInput(event) {
     }
 }
 
+function toggleExpiringSecretCustomDate() {
+    const windowSelect = document.getElementById("expiring-secret-window");
+    const customDateWrap = document.getElementById("expiring-secret-custom-date-wrap");
+    const customDateInput = document.getElementById("expiring-secret-custom-date");
+    if (!windowSelect || !customDateWrap || !customDateInput) return;
+    const isCustom = windowSelect.value === "custom";
+    customDateWrap.classList.toggle("d-none", !isCustom);
+    customDateInput.required = isCustom;
+    if (!isCustom) {
+        customDateInput.value = "";
+    }
+}
+
+function clearExpiringSecretsResults() {
+    const feedback = document.getElementById("expiring-secrets-feedback");
+    const resultsWrap = document.getElementById("expiring-secrets-results-wrap");
+    const resultsBody = document.getElementById("expiring-secrets-results");
+    if (feedback) {
+        feedback.textContent = "";
+        feedback.className = "small mt-3 text-muted";
+    }
+    if (resultsBody) {
+        resultsBody.innerHTML = "";
+    }
+    if (resultsWrap) {
+        resultsWrap.classList.add("d-none");
+    }
+}
+
+async function searchExpiringSecrets(event) {
+    event.preventDefault();
+    const windowSelect = document.getElementById("expiring-secret-window");
+    const customDateInput = document.getElementById("expiring-secret-custom-date");
+    const feedback = document.getElementById("expiring-secrets-feedback");
+    const resultsWrap = document.getElementById("expiring-secrets-results-wrap");
+    const resultsBody = document.getElementById("expiring-secrets-results");
+    if (!windowSelect || !customDateInput || !feedback || !resultsWrap || !resultsBody) return;
+
+    const windowValue = windowSelect.value || "today";
+    const customDate = customDateInput.value;
+    if (windowValue === "custom" && !customDate) {
+        feedback.textContent = "Please select a custom date.";
+        feedback.className = "small mt-3 text-danger";
+        resultsWrap.classList.add("d-none");
+        return;
+    }
+
+    feedback.textContent = "Searching…";
+    feedback.className = "small mt-3 text-muted";
+
+    try {
+        const params = new URLSearchParams({ window: windowValue });
+        if (windowValue === "custom" && customDate) {
+            params.set("custom_date", customDate);
+        }
+
+        const res = await fetch(`/secrets/search-expiring-secrets/?${params.toString()}`, {
+            headers: { "X-Requested-With": "XMLHttpRequest" },
+            credentials: "same-origin",
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            feedback.textContent = data.error || "Search failed. Please try again.";
+            feedback.className = "small mt-3 text-danger";
+            resultsWrap.classList.add("d-none");
+            return;
+        }
+
+        resultsBody.innerHTML = "";
+        if (!data.results || data.results.length === 0) {
+            feedback.textContent = `No expiring secrets found for ${data.target_date || "the selected date"}.`;
+            feedback.className = "small mt-3 text-muted";
+            resultsWrap.classList.add("d-none");
+            return;
+        }
+
+        data.results.forEach((item) => {
+            const row = document.createElement("tr");
+
+            const secretTd = document.createElement("td");
+            const secretStrong = document.createElement("strong");
+            secretStrong.textContent = item.secret_name || "—";
+            secretTd.appendChild(secretStrong);
+
+            const serviceTd = document.createElement("td");
+            serviceTd.textContent = item.service_name || "—";
+
+            const locationTd = document.createElement("td");
+            const locationPill = document.createElement("span");
+            locationPill.className = "result-path";
+            locationPill.textContent = item.path || "—";
+            locationTd.appendChild(locationPill);
+
+            const expiryTd = document.createElement("td");
+            expiryTd.textContent = item.expire_date || "—";
+
+            const actionTd = document.createElement("td");
+            const openBtn = document.createElement("button");
+            openBtn.type = "button";
+            openBtn.className = "btn btn-outline-primary btn-sm";
+            openBtn.textContent = "Open";
+            openBtn.addEventListener("click", () => {
+                showSection("secrets");
+                window.setTimeout(() => {
+                    document.getElementById(`secret-${item.secret_id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+                }, 180);
+            });
+            actionTd.appendChild(openBtn);
+
+            row.appendChild(secretTd);
+            row.appendChild(serviceTd);
+            row.appendChild(locationTd);
+            row.appendChild(expiryTd);
+            row.appendChild(actionTd);
+            resultsBody.appendChild(row);
+        });
+
+        resultsWrap.classList.remove("d-none");
+        const truncatedText = data.truncated ? " Showing top matches only." : "";
+        feedback.textContent = `${data.window_label || "Selected filter"}: found ${data.count} secret(s).${truncatedText}`;
+        feedback.className = "small mt-3 text-success";
+    } catch (error) {
+        console.error("Expiring secret search failed:", error);
+        feedback.textContent = "Search failed due to a network error.";
+        feedback.className = "small mt-3 text-danger";
+        resultsWrap.classList.add("d-none");
+    }
+}
+
 
 function attachSecretRegexValidation() {
     document.querySelectorAll("form.secret-form").forEach(form => {
@@ -1796,6 +1967,12 @@ showSection("dashboard");
 attachSecretRegexValidation();
 document.getElementById("secret-path-search-form")?.addEventListener("submit", searchSecretPaths);
 document.getElementById("secret-path-query")?.addEventListener("input", handleSecretPathQueryInput);
+document.getElementById("expiring-secrets-form")?.addEventListener("submit", searchExpiringSecrets);
+document.getElementById("expiring-secret-window")?.addEventListener("change", () => {
+    toggleExpiringSecretCustomDate();
+    clearExpiringSecretsResults();
+});
+toggleExpiringSecretCustomDate();
 </script>
 
 </body>
