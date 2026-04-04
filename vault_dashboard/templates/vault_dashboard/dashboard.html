@@ -268,16 +268,16 @@
 
         <div class="d-flex align-items-center gap-3">
             <span class="badge rounded-pill text-bg-light" title="Logged in user">
-                👤 {{ request.user.username }}
+                {{ request.user.username }}
             </span>
             {% if can_view_notifications %}
             <a href="{% url 'notifications' %}" class="btn btn-outline-primary btn-sm">
-                📧 Notifications
+                Notifications
             </a>
             {% endif %}
             {% if can_view_audit_logs %}
             <a href="{% url 'audit_dashboard' %}" class="btn btn-outline-dark btn-sm">
-                📜 Audit Logs
+                Audit Logs
             </a>
             {% endif %}
 
@@ -285,7 +285,7 @@
             <form method="POST" action="{% url 'seal' %}" class="d-inline">
                 {% csrf_token %}
                 <button type="submit" class="btn btn-outline-danger btn-sm">
-                    🔒 Seal Vault
+                    Seal Vault
                 </button>
             </form>
             {% endif %}
