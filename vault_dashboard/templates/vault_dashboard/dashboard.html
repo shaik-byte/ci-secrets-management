@@ -1174,7 +1174,7 @@
                     {{ env.name }}
                     {% if request.user.is_superuser %}
                     <span class="badge bg-light text-dark ms-2">Created by: {{ env.created_by.username }}</span>
-                    <span class="badge {% if env.require_admin_delete_approval %}bg-warning text-dark{% else %}bg-secondary{% endif %} ms-2">
+                    <span class="badge {% if env.require_admin_delete_approval %}bg-primary text-light{% else %}bg-secondary{% endif %} ms-2">
                         Approval: {% if env.require_admin_delete_approval %}Enabled{% else %}Disabled{% endif %}
                     </span>
                     {% endif %}
