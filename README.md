@@ -187,6 +187,9 @@ You can now manage secrets from the terminal without using the web UI.
 - `add-secret`: add a new secret in an environment/folder
 - `delete-secret`: delete a secret by id or name
 - `logout`: clear local CLI session
+- `policy-list`: list policy engine access policies
+- `policy-save`: create/update policy engine access policy for a user/scope
+- `policy-delete`: delete policy engine access policy by id or by user/scope
 
 ### Install + run (Windows CMD / PowerShell / macOS / Linux)
 
@@ -279,6 +282,26 @@ python cli/vault_agent.py delete-secret --environment production --folder backen
 
 # Logout / clear local CLI session
 python cli/vault_agent.py logout
+
+# Policy Engine (CLI): list all policies
+python cli/vault_agent.py policy-list
+
+# Policy Engine (CLI): grant read+write for user on environment scope
+python cli/vault_agent.py policy-save \
+  --user alice \
+  --environment production \
+  --read --write
+
+# Policy Engine (CLI): grant read for user on secret scope
+python cli/vault_agent.py policy-save \
+  --user alice \
+  --environment production \
+  --folder backend \
+  --secret STRIPE_API_KEY \
+  --read
+
+# Policy Engine (CLI): delete by policy id
+python cli/vault_agent.py policy-delete --policy-id 12
 ```
 
 ### Notes

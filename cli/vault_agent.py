@@ -35,7 +35,8 @@ from django.core.exceptions import ObjectDoesNotExist  # noqa: E402
 
 from vault.crypto_utils import decrypt_root_key  # noqa: E402
 from vault.models import VaultConfig  # noqa: E402
-from vault_dashboard.models import Environment, Folder, Secret  # noqa: E402
+from django.contrib.auth.models import User  # noqa: E402
+from vault_dashboard.models import AccessPolicy, Environment, Folder, Secret  # noqa: E402
 
 
 SESSION_FILE = Path.home() / ".vault_cli_session.json"
@@ -217,6 +218,137 @@ def cmd_delete_secret(args: argparse.Namespace) -> int:
     return 0
 
 
+def _resolve_user(username: str) -> User:
+    try:
+        return User.objects.get(username=username)
+    except ObjectDoesNotExist as exc:
+        raise ValueError(f"User '{username}' not found.") from exc
+
+
+def _resolve_scope(
+    environment_name: Optional[str],
+    folder_name: Optional[str],
+    secret_name: Optional[str],
+) -> tuple[Optional[Environment], Optional[Folder], Optional[Secret]]:
+    environment = None
+    folder = None
+    secret = None
+
+    if environment_name:
+        try:
+            environment = Environment.objects.get(name=environment_name)
+        except ObjectDoesNotExist as exc:
+            raise ValueError(f"Environment '{environment_name}' not found.") from exc
+
+    if folder_name:
+        if not environment:
+            raise ValueError("--folder requires --environment.")
+        try:
+            folder = Folder.objects.get(name=folder_name, environment=environment)
+        except ObjectDoesNotExist as exc:
+            raise ValueError(
+                f"Folder '{folder_name}' not found in environment '{environment_name}'."
+            ) from exc
+
+    if secret_name:
+        if not folder:
+            raise ValueError("--secret requires both --environment and --folder.")
+        try:
+            secret = Secret.objects.get(name=secret_name, folder=folder)
+        except ObjectDoesNotExist as exc:
+            raise ValueError(
+                f"Secret '{secret_name}' not found in {environment_name}/{folder_name}."
+            ) from exc
+
+    return environment, folder, secret
+
+
+def cmd_policy_list(args: argparse.Namespace) -> int:
+    _auth_context(args)
+
+    queryset = AccessPolicy.objects.select_related(
+        "user", "environment", "folder", "secret"
+    ).order_by("id")
+    if args.user:
+        queryset = queryset.filter(user__username=args.user)
+
+    if not queryset.exists():
+        print("No access policies found.")
+        return 0
+
+    for policy in queryset:
+        scope = "global"
+        if policy.secret_id:
+            scope = (
+                f"{policy.secret.folder.environment.name}/"
+                f"{policy.secret.folder.name}/{policy.secret.name}"
+            )
+        elif policy.folder_id:
+            scope = f"{policy.folder.environment.name}/{policy.folder.name}"
+        elif policy.environment_id:
+            scope = f"{policy.environment.name}"
+
+        print(
+            f"- id={policy.id} | user={policy.user.username} | scope={scope} | "
+            f"read={policy.can_read} write={policy.can_write} delete={policy.can_delete}"
+        )
+    return 0
+
+
+def cmd_policy_save(args: argparse.Namespace) -> int:
+    _auth_context(args)
+
+    user = _resolve_user(args.user)
+    environment, folder, secret = _resolve_scope(args.environment, args.folder, args.secret)
+
+    if not any([args.can_read, args.can_write, args.can_delete]):
+        raise ValueError("Provide at least one permission flag: --read, --write, or --delete.")
+
+    policy, _ = AccessPolicy.objects.update_or_create(
+        user=user,
+        environment=environment,
+        folder=folder,
+        secret=secret,
+        defaults={
+            "can_read": args.can_read,
+            "can_write": args.can_write,
+            "can_delete": args.can_delete,
+        },
+    )
+    print(
+        f"Policy saved: id={policy.id} user={user.username} "
+        f"read={policy.can_read} write={policy.can_write} delete={policy.can_delete}"
+    )
+    return 0
+
+
+def cmd_policy_delete(args: argparse.Namespace) -> int:
+    _auth_context(args)
+
+    if args.policy_id is not None:
+        policy = AccessPolicy.objects.filter(id=args.policy_id).first()
+        if not policy:
+            raise ValueError(f"Policy id={args.policy_id} not found.")
+        policy.delete()
+        print(f"Policy deleted: id={args.policy_id}")
+        return 0
+
+    user = _resolve_user(args.user)
+    environment, folder, secret = _resolve_scope(args.environment, args.folder, args.secret)
+    policy = AccessPolicy.objects.filter(
+        user=user,
+        environment=environment,
+        folder=folder,
+        secret=secret,
+    ).first()
+    if not policy:
+        raise ValueError("Matching policy not found for provided user/scope.")
+    pid = policy.id
+    policy.delete()
+    print(f"Policy deleted: id={pid}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Vault CLI Agent")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -262,6 +394,37 @@ def build_parser() -> argparse.ArgumentParser:
     identity.add_argument("--name", help="Secret name")
     del_cmd.set_defaults(func=cmd_delete_secret)
 
+    policy_list = subparsers.add_parser(
+        "policy-list", help="List policy engine access policies (CLI)"
+    )
+    policy_list.add_argument("--root-token", required=False, help="Override token for this call")
+    policy_list.add_argument("--user", required=False, help="Filter by username")
+    policy_list.set_defaults(func=cmd_policy_list)
+
+    policy_save = subparsers.add_parser(
+        "policy-save", help="Create/update an access policy (CLI)"
+    )
+    policy_save.add_argument("--root-token", required=False, help="Override token for this call")
+    policy_save.add_argument("--user", required=True, help="Username to bind policy")
+    policy_save.add_argument("--environment", required=False, help="Environment name")
+    policy_save.add_argument("--folder", required=False, help="Folder name (requires --environment)")
+    policy_save.add_argument("--secret", required=False, help="Secret name (requires --environment and --folder)")
+    policy_save.add_argument("--read", dest="can_read", action="store_true", help="Grant read")
+    policy_save.add_argument("--write", dest="can_write", action="store_true", help="Grant write")
+    policy_save.add_argument("--delete", dest="can_delete", action="store_true", help="Grant delete")
+    policy_save.set_defaults(func=cmd_policy_save)
+
+    policy_delete = subparsers.add_parser(
+        "policy-delete", help="Delete access policy by id or by user/scope (CLI)"
+    )
+    policy_delete.add_argument("--root-token", required=False, help="Override token for this call")
+    policy_delete.add_argument("--policy-id", type=int, required=False, help="Policy id")
+    policy_delete.add_argument("--user", required=False, help="Username (required when --policy-id not provided)")
+    policy_delete.add_argument("--environment", required=False, help="Environment name")
+    policy_delete.add_argument("--folder", required=False, help="Folder name")
+    policy_delete.add_argument("--secret", required=False, help="Secret name")
+    policy_delete.set_defaults(func=cmd_policy_delete)
+
     return parser
 
 
@@ -269,6 +432,8 @@ def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
     try:
+        if args.command == "policy-delete" and args.policy_id is None and not args.user:
+            raise ValueError("policy-delete requires --policy-id or --user.")
         return args.func(args)
     except (AuthError, ValueError) as exc:
         print(f"ERROR: {exc}")
