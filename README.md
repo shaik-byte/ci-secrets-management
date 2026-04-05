@@ -311,6 +311,47 @@ python cli/vault_agent.py policy-apply --file policy.yaml --format yaml
 python cli/vault_agent.py policy-delete --file delete_policies.json --format json
 ```
 
+### Policy Engine CLI (easy mode)
+
+Use these two document templates and apply them directly:
+
+**`policy.yaml`**
+
+```yaml
+rules:
+  - user: alice
+    environment: production
+    folder: backend
+    secret: STRIPE_API_KEY
+    permissions:
+      read: true
+      write: false
+      delete: false
+```
+
+Apply:
+
+```bash
+python cli/vault_agent.py policy-apply --file policy.yaml --format yaml
+```
+
+**`delete_policies.json`**
+
+```json
+{
+  "policies": [
+    { "policy_id": 12 },
+    { "user": "alice", "environment": "production", "folder": "backend", "secret": "STRIPE_API_KEY" }
+  ]
+}
+```
+
+Delete:
+
+```bash
+python cli/vault_agent.py policy-delete --file delete_policies.json --format json
+```
+
 ### Notes
 
 - `list-secrets --show-values` decrypts and prints plaintext values.
