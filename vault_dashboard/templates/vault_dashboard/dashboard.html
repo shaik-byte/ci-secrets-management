@@ -218,6 +218,12 @@
             padding: 0.25rem 0.5rem;
             display: inline-block;
         }
+
+        .folder-icon svg {
+            width: 1rem;
+            height: 1rem;
+            vertical-align: -0.125em;
+        }
     </style>
 </head>
 
@@ -1274,7 +1280,11 @@
                                         type="button"
                                         data-bs-toggle="collapse"
                                         data-bs-target="#collapseFolder{{ folder.id }}">
-                                    <span class="text-primary">📁</span> {{ folder.name }}
+                                    <span class="folder-icon text-primary me-1" aria-hidden="true">
+                                        <svg viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                                            <path d="M9.828 3a3 3 0 0 1 2.122.879l.172.172A3 3 0 0 0 14.243 5H14.5A1.5 1.5 0 0 1 16 6.5v6A1.5 1.5 0 0 1 14.5 14h-13A1.5 1.5 0 0 1 0 12.5V3.5A1.5 1.5 0 0 1 1.5 2h3.586a1.5 1.5 0 0 1 1.06.44l.586.585A1.5 1.5 0 0 0 7.793 3z"/>
+                                        </svg>
+                                    </span>{{ folder.name }}
                                     <span class="badge bg-info text-dark ms-2">Risk: {{ folder.risk_score }}/100</span>
                                     <span class="badge bg-light text-dark ms-2">Owner: {{ folder.owner_email|default:"-" }}</span>
                                 </button>
