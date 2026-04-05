@@ -9,6 +9,7 @@ FEATURE_CATALOG = [
     {"key": "notifications", "label": "Notifications", "default_enabled": False},
     {"key": "audit_logs", "label": "Audit Logs", "default_enabled": False},
     {"key": "seal_vault", "label": "Seal Vault", "default_enabled": False},
+    {"key": "analysis", "label": "Vault Analysis", "default_enabled": False},
 ]
 FEATURE_DEFAULTS = {item["key"]: item["default_enabled"] for item in FEATURE_CATALOG}
 

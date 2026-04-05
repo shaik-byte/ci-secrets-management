@@ -174,6 +174,8 @@ from .models import (
 )
 from .utils import encrypt_value, decrypt_value
 from .feature_access import FEATURE_CATALOG, FEATURE_DEFAULTS, resolve_user_feature_visibility, user_has_feature
+from .analysis import VaultAnalysisOrchestrator, AuditLogNLQueryEngine
+from .analysis.alerting import AlertingRouter
 
 from auditlogs.models import AuditLog
 
@@ -352,6 +354,7 @@ def dashboard(request):
         "can_view_notifications": "notifications" in visible_feature_keys,
         "can_view_audit_logs": "audit_logs" in visible_feature_keys,
         "can_view_seal_vault": "seal_vault" in visible_feature_keys,
+        "can_view_analysis": "analysis" in visible_feature_keys,
         "feature_rows": feature_rows,
         "setting_environments": _manageable_environments_for_settings(request.user).order_by("name"),
     })
@@ -655,6 +658,62 @@ def search_expiring_secrets(request):
         "target_date": target_date.isoformat(),
         "truncated": len(matches) >= 50 or scanned >= max_scan,
     })
+
+
+@login_required
+@require_GET
+def run_vault_analysis(request):
+    if "vault_key" not in request.session:
+        return JsonResponse({"error": "Vault is sealed for this session."}, status=403)
+    if not user_has_feature(request.user, "analysis"):
+        return JsonResponse({"error": "You do not have vault analysis feature access."}, status=403)
+
+    hours_raw = request.GET.get("hours", "24")
+    try:
+        hours = max(1, min(int(hours_raw), 24 * 30))
+    except ValueError:
+        return JsonResponse({"error": "Invalid analysis window."}, status=400)
+
+    orchestrator = VaultAnalysisOrchestrator()
+    payload = orchestrator.run(hours=hours)
+    payload["delivery_plan"] = AlertingRouter().build_delivery_plan(payload.get("alert_groups", []))
+    payload["analysis_window_hours"] = hours
+
+    AuditLog.objects.create(
+        user=request.user,
+        action="READ",
+        entity="VaultAnalysis",
+        details=f"Ran vault analysis (hours={hours}, alerts={len(payload.get('alert_groups', []))})",
+        ip_address=get_client_ip(request),
+    )
+    return JsonResponse(payload)
+
+
+@login_required
+@require_GET
+def query_vault_analysis(request):
+    if "vault_key" not in request.session:
+        return JsonResponse({"error": "Vault is sealed for this session."}, status=403)
+    if not user_has_feature(request.user, "analysis"):
+        return JsonResponse({"error": "You do not have vault analysis feature access."}, status=403)
+
+    query_text = (request.GET.get("q") or "").strip()
+    if not query_text:
+        return JsonResponse({"error": "Query is empty."}, status=400)
+
+    engine = AuditLogNLQueryEngine()
+    result = engine.query(query_text, limit=120)
+    if result.get("error"):
+        return JsonResponse(result, status=400)
+
+    AuditLog.objects.create(
+        user=request.user,
+        action="READ",
+        entity="VaultAnalysisNLQ",
+        details=f"Executed vault NL query (len={len(query_text)}, results={result.get('count', 0)})",
+        ip_address=get_client_ip(request),
+    )
+    return JsonResponse(result)
 
 
 @login_required
