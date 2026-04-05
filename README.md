@@ -189,6 +189,7 @@ You can now manage secrets from the terminal without using the web UI.
 - `logout`: clear local CLI session
 - `policy-list`: list policy engine access policies
 - `policy-save`: create/update policy engine access policy for a user/scope
+- `policy-apply`: apply policy rules from YAML/JSON document
 - `policy-delete`: delete policy engine access policy by id or by user/scope
 
 ### Install + run (Windows CMD / PowerShell / macOS / Linux)
@@ -302,6 +303,12 @@ python cli/vault_agent.py policy-save \
 
 # Policy Engine (CLI): delete by policy id
 python cli/vault_agent.py policy-delete --policy-id 12
+
+# Policy Engine (CLI): apply rules from YAML/JSON file
+python cli/vault_agent.py policy-apply --file policy.yaml --format yaml
+
+# Policy Engine (CLI): bulk delete policies from JSON file
+python cli/vault_agent.py policy-delete --file delete_policies.json --format json
 ```
 
 ### Notes
