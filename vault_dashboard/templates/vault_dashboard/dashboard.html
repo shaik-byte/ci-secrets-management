@@ -411,15 +411,42 @@
 
         <div id="analysis-feedback" class="small mt-3 text-muted"></div>
         <div id="analysis-summary" class="mt-2"></div>
+        <div id="analysis-kpis" class="small text-muted mb-2"></div>
+        <div class="row g-2 mb-2">
+            <div class="col-md-3">
+                <select id="incident-filter-severity" class="form-select form-select-sm">
+                    <option value="">All severity</option>
+                    <option value="critical">Critical</option>
+                    <option value="high">High</option>
+                    <option value="medium">Medium</option>
+                    <option value="low">Low</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <select id="incident-filter-status" class="form-select form-select-sm">
+                    <option value="">All status</option>
+                    <option value="open">Open</option>
+                    <option value="investigating">Investigating</option>
+                    <option value="resolved">Resolved</option>
+                </select>
+            </div>
+            <div class="col-md-6 text-end">
+                <button type="button" id="incident-filter-apply" class="btn btn-outline-primary btn-sm">Apply Incident Filters</button>
+            </div>
+        </div>
         <div class="table-responsive mt-3 d-none" id="analysis-alerts-wrap">
             <table class="table table-sm align-middle">
                 <thead>
                     <tr>
+                        <th>Incident</th>
                         <th>User</th>
                         <th>Action</th>
                         <th>Entity</th>
                         <th>Severity</th>
                         <th>Score</th>
+                        <th>Status/Assignee</th>
+                        <th>Env/Cluster</th>
+                        <th>Routing</th>
                         <th>Why</th>
                     </tr>
                 </thead>
@@ -427,6 +454,57 @@
             </table>
         </div>
         <div id="analysis-delivery-plan" class="small text-muted"></div>
+        <div id="analysis-audit-trail" class="small text-muted mt-2"></div>
+    </div>
+
+    <div class="card p-4 mb-4 shadow-sm d-none" id="incident-detail-card">
+        <h5 class="mb-2">Incident Details</h5>
+        <div id="incident-detail-header" class="small text-muted mb-2"></div>
+        <div id="incident-score-breakdown" class="mb-2"></div>
+        <div id="incident-timeline-chart" class="mb-3"></div>
+
+        <div class="row g-3">
+            <div class="col-md-6">
+                <h6>Identity Profile</h6>
+                <div id="incident-identity-profile" class="small text-muted"></div>
+            </div>
+            <div class="col-md-6">
+                <h6>Secret/Path Profile</h6>
+                <div id="incident-secret-profile" class="small text-muted"></div>
+            </div>
+        </div>
+
+        <form id="incident-workflow-form" class="row g-2 align-items-end mt-2">
+            <input type="hidden" id="incident-workflow-id">
+            <div class="col-md-3">
+                <label class="form-label">Status</label>
+                <select id="incident-workflow-status" class="form-select">
+                    <option value="open">Open</option>
+                    <option value="investigating">Investigating</option>
+                    <option value="resolved">Resolved</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Assignee</label>
+                <select id="incident-workflow-assignee" class="form-select">
+                    <option value="">Unassigned</option>
+                    {% for user in users %}
+                    <option value="{{ user.id }}">{{ user.username }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Analyst Notes</label>
+                <input id="incident-workflow-notes" type="text" class="form-control" placeholder="Add investigation notes">
+            </div>
+            <div class="col-md-2 form-check mt-4">
+                <input id="incident-workflow-fp" class="form-check-input" type="checkbox">
+                <label class="form-check-label" for="incident-workflow-fp">False Positive</label>
+            </div>
+            <div class="col-md-12 text-end">
+                <button type="submit" class="btn btn-primary btn-sm">Save Workflow</button>
+            </div>
+        </form>
     </div>
 
     <div class="card p-4 mb-4 shadow-sm">
@@ -442,6 +520,24 @@
             </div>
         </form>
         <div id="analysis-query-feedback" class="small mt-3 text-muted"></div>
+        <div class="small text-muted mb-2">
+            Suggestions:
+            <button type="button" class="btn btn-link btn-sm p-0 analysis-query-suggestion" data-query="who accessed what today">who accessed what today</button> ·
+            <button type="button" class="btn btn-link btn-sm p-0 analysis-query-suggestion" data-query="policy changes this week">policy changes this week</button> ·
+            <button type="button" class="btn btn-link btn-sm p-0 analysis-query-suggestion" data-query="session activity for admin">session activity for admin</button>
+        </div>
+        <form id="analysis-save-query-form" class="row g-2 align-items-end mb-2">
+            <div class="col-md-4">
+                <input id="analysis-save-query-name" type="text" class="form-control" placeholder="Saved query name">
+            </div>
+            <div class="col-md-6">
+                <input id="analysis-save-query-text" type="text" class="form-control" placeholder="Query text to save">
+            </div>
+            <div class="col-md-2 d-grid">
+                <button type="submit" class="btn btn-outline-primary">Save Query</button>
+            </div>
+        </form>
+        <div id="analysis-saved-query-list" class="small text-muted mb-2"></div>
         <div class="table-responsive mt-3 d-none" id="analysis-query-wrap">
             <table class="table table-sm align-middle">
                 <thead>
@@ -2052,17 +2148,21 @@ async function runVaultAnalysis(event) {
     const windowSelect = document.getElementById("analysis-window-hours");
     const feedback = document.getElementById("analysis-feedback");
     const summary = document.getElementById("analysis-summary");
+    const kpis = document.getElementById("analysis-kpis");
     const alertsWrap = document.getElementById("analysis-alerts-wrap");
     const alertsBody = document.getElementById("analysis-alerts-body");
     const deliveryPlan = document.getElementById("analysis-delivery-plan");
-    if (!windowSelect || !feedback || !summary || !alertsWrap || !alertsBody || !deliveryPlan) return;
+    const auditTrail = document.getElementById("analysis-audit-trail");
+    if (!windowSelect || !feedback || !summary || !kpis || !alertsWrap || !alertsBody || !deliveryPlan || !auditTrail) return;
 
     feedback.textContent = "Running analysis…";
     feedback.className = "small mt-3 text-muted";
     summary.textContent = "";
+    kpis.textContent = "";
     alertsBody.innerHTML = "";
     alertsWrap.classList.add("d-none");
     deliveryPlan.textContent = "";
+    auditTrail.textContent = "";
 
     try {
         const params = new URLSearchParams({ hours: windowSelect.value || "24" });
@@ -2081,28 +2181,128 @@ async function runVaultAnalysis(event) {
         feedback.textContent = `Processed ${data.event_count} audit events for the last ${data.analysis_window_hours} hour(s).`;
         feedback.className = "small mt-3 text-success";
 
-        if (data.alert_groups?.length) {
-            data.alert_groups.forEach((alert) => {
-                const row = document.createElement("tr");
-                row.innerHTML = `
-                    <td>${alert.username || "—"}</td>
-                    <td>${alert.action || "—"}</td>
-                    <td>${alert.entity || "—"}</td>
-                    <td>${alert.severity || "low"}</td>
-                    <td>${alert.risk_score ?? 0}</td>
-                    <td>${(alert.reasons || []).join(" ")}</td>
-                `;
-                alertsBody.appendChild(row);
-            });
-            alertsWrap.classList.remove("d-none");
-        }
+        kpis.textContent = `Dedup groups: ${data.dedup_groups_count || 0} · Baseline deviations: ${(data.baseline_comparison || []).length} · Trend warnings: ${(data.trend_dashboard || []).length}`;
+        renderIncidentRows(data.incidents || []);
         const channels = (data.delivery_plan || []).join(", ");
         deliveryPlan.textContent = channels ? `Alert routing plan: ${channels}.` : "No alert routing needed for current result set.";
+        auditTrail.textContent = `Analyzer audit trail events: ${(data.audit_trail || []).length}`;
     } catch (error) {
         console.error("Vault analysis failed:", error);
         feedback.textContent = "Analysis failed due to a network error.";
         feedback.className = "small mt-3 text-danger";
     }
+}
+
+function renderIncidentRows(incidents) {
+    const alertsWrap = document.getElementById("analysis-alerts-wrap");
+    const alertsBody = document.getElementById("analysis-alerts-body");
+    if (!alertsWrap || !alertsBody) return;
+    alertsBody.innerHTML = "";
+    if (!incidents.length) {
+        alertsWrap.classList.add("d-none");
+        return;
+    }
+    incidents.forEach((incident) => {
+        const row = document.createElement("tr");
+        row.innerHTML = `
+            <td><button type="button" class="btn btn-link btn-sm p-0 incident-open" data-id="${incident.id}">${incident.incident_key}</button></td>
+            <td>${incident.username || "—"}</td>
+            <td>${incident.action || "—"}</td>
+            <td>${incident.entity || "—"}</td>
+            <td>${incident.severity || "low"}</td>
+            <td>${incident.risk_score ?? 0}</td>
+            <td>${incident.status || "open"} / ${incident.assignee || "-"}</td>
+            <td>${incident.environment_label || "-"} / ${incident.cluster_label || "-"}</td>
+            <td>${incident.routing_status || "-"}</td>
+            <td>${incident.false_positive ? "Marked false-positive" : "-"}</td>
+        `;
+        alertsBody.appendChild(row);
+    });
+    alertsWrap.classList.remove("d-none");
+}
+
+async function applyIncidentFilters() {
+    const severity = document.getElementById("incident-filter-severity")?.value || "";
+    const status = document.getElementById("incident-filter-status")?.value || "";
+    const params = new URLSearchParams();
+    if (severity) params.set("severity", severity);
+    if (status) params.set("status", status);
+    const res = await fetch(`/secrets/analysis/incidents/?${params.toString()}`, {
+        headers: { "X-Requested-With": "XMLHttpRequest" },
+        credentials: "same-origin",
+    });
+    const data = await res.json();
+    if (!res.ok) {
+        alert(data.error || "Failed to load incidents.");
+        return;
+    }
+    renderIncidentRows(data.incidents || []);
+}
+
+function renderTimelineBars(points) {
+    if (!points?.length) return "<div class='text-muted small'>No timeline data.</div>";
+    const max = Math.max(...points.map((p) => p.count || 0), 1);
+    return points
+        .map((p) => `<div class="d-flex align-items-center mb-1"><span class="small me-2" style="width:140px;">${p.hour}</span><div style="height:10px;background:#0d6efd;width:${Math.max(5, Math.round((p.count / max) * 100))}%;border-radius:4px;"></div><span class="small ms-2">${p.count}</span></div>`)
+        .join("");
+}
+
+async function openIncidentDetail(incidentId) {
+    const res = await fetch(`/secrets/analysis/incidents/${incidentId}/`, {
+        headers: { "X-Requested-With": "XMLHttpRequest" },
+        credentials: "same-origin",
+    });
+    const data = await res.json();
+    if (!res.ok) {
+        alert(data.error || "Failed to load incident.");
+        return;
+    }
+    const card = document.getElementById("incident-detail-card");
+    if (!card) return;
+    card.classList.remove("d-none");
+
+    const incident = data.incident || {};
+    document.getElementById("incident-detail-header").textContent = `${incident.incident_key} | ${incident.severity} | score ${incident.risk_score}`;
+    document.getElementById("incident-score-breakdown").innerHTML = `<strong>Score breakdown:</strong> ${(incident.reasons || []).join(" ") || "No detailed reasons."}`;
+    document.getElementById("incident-timeline-chart").innerHTML = `<strong>Timeline:</strong>${renderTimelineBars(data.timeline || [])}`;
+    document.getElementById("incident-identity-profile").textContent = `User: ${data.identity_profile?.username || "-"} | Open incidents: ${data.identity_profile?.open_incidents || 0} | Avg risk: ${(data.identity_profile?.avg_risk || 0).toFixed(1)}`;
+    document.getElementById("incident-secret-profile").textContent = `Entity: ${data.secret_profile?.entity || "-"} | Action: ${data.secret_profile?.action || "-"} | Related incidents: ${data.secret_profile?.incident_count || 0}`;
+
+    document.getElementById("incident-workflow-id").value = incident.id || "";
+    document.getElementById("incident-workflow-status").value = incident.status || "open";
+    document.getElementById("incident-workflow-assignee").value = incident.assignee_id || "";
+    document.getElementById("incident-workflow-notes").value = incident.analyst_notes || "";
+    document.getElementById("incident-workflow-fp").checked = !!incident.false_positive;
+}
+
+async function saveIncidentWorkflow(event) {
+    event.preventDefault();
+    const incidentId = document.getElementById("incident-workflow-id")?.value;
+    if (!incidentId) return;
+    const formData = new URLSearchParams();
+    formData.set("status", document.getElementById("incident-workflow-status").value);
+    formData.set("assignee_id", document.getElementById("incident-workflow-assignee").value);
+    formData.set("analyst_notes", document.getElementById("incident-workflow-notes").value);
+    if (document.getElementById("incident-workflow-fp").checked) {
+        formData.set("false_positive", "1");
+    }
+    const res = await fetch(`/secrets/analysis/incidents/${incidentId}/update/`, {
+        method: "POST",
+        headers: {
+            "X-Requested-With": "XMLHttpRequest",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]")?.value || "",
+        },
+        body: formData.toString(),
+        credentials: "same-origin",
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+        alert(data.error || "Failed to update incident.");
+        return;
+    }
+    await applyIncidentFilters();
+    alert("Incident workflow updated.");
 }
 
 async function runVaultAnalysisQuery(event) {
@@ -2161,6 +2361,55 @@ async function runVaultAnalysisQuery(event) {
     }
 }
 
+async function saveAnalysisQuery(event) {
+    event.preventDefault();
+    const name = document.getElementById("analysis-save-query-name")?.value?.trim() || "";
+    const query = document.getElementById("analysis-save-query-text")?.value?.trim() || "";
+    if (!name || !query) {
+        alert("Please provide query name and text.");
+        return;
+    }
+    const formData = new URLSearchParams({ name, query });
+    const res = await fetch("/secrets/analysis/queries/save/", {
+        method: "POST",
+        headers: {
+            "X-Requested-With": "XMLHttpRequest",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]")?.value || "",
+        },
+        body: formData.toString(),
+        credentials: "same-origin",
+    });
+    const data = await res.json();
+    if (!res.ok) {
+        alert(data.error || "Failed to save query.");
+        return;
+    }
+    document.getElementById("analysis-save-query-name").value = "";
+    loadSavedQueries();
+}
+
+async function loadSavedQueries() {
+    const target = document.getElementById("analysis-saved-query-list");
+    if (!target) return;
+    const res = await fetch("/secrets/analysis/queries/", {
+        headers: { "X-Requested-With": "XMLHttpRequest" },
+        credentials: "same-origin",
+    });
+    const data = await res.json();
+    if (!res.ok) {
+        target.textContent = data.error || "Unable to load saved queries.";
+        return;
+    }
+    if (!data.saved_queries?.length) {
+        target.textContent = "No saved queries yet.";
+        return;
+    }
+    target.innerHTML = data.saved_queries
+        .map((q) => `<button type="button" class="btn btn-link btn-sm p-0 saved-query-item" data-query="${q.query}">${q.name}</button>`)
+        .join(" · ");
+}
+
 
 function attachSecretRegexValidation() {
     document.querySelectorAll("form.secret-form").forEach(form => {
@@ -2205,6 +2454,28 @@ document.getElementById("expiring-secret-window")?.addEventListener("change", ()
 toggleExpiringSecretCustomDate();
 document.getElementById("analysis-run-form")?.addEventListener("submit", runVaultAnalysis);
 document.getElementById("analysis-query-form")?.addEventListener("submit", runVaultAnalysisQuery);
+document.getElementById("analysis-save-query-form")?.addEventListener("submit", saveAnalysisQuery);
+document.getElementById("incident-filter-apply")?.addEventListener("click", applyIncidentFilters);
+document.getElementById("incident-workflow-form")?.addEventListener("submit", saveIncidentWorkflow);
+document.addEventListener("click", (event) => {
+    const incidentBtn = event.target.closest(".incident-open");
+    if (incidentBtn) {
+        openIncidentDetail(incidentBtn.dataset.id);
+        return;
+    }
+    const suggestion = event.target.closest(".analysis-query-suggestion");
+    if (suggestion) {
+        const input = document.getElementById("analysis-nl-query");
+        if (input) input.value = suggestion.dataset.query || "";
+        return;
+    }
+    const savedQuery = event.target.closest(".saved-query-item");
+    if (savedQuery) {
+        const input = document.getElementById("analysis-nl-query");
+        if (input) input.value = savedQuery.dataset.query || "";
+    }
+});
+loadSavedQueries();
 </script>
 
 </body>

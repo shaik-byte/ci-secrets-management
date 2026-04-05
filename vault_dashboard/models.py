@@ -268,3 +268,52 @@ class EnvironmentSecretPolicy(models.Model):
 
     def __str__(self):
         return f"Env Policy - {self.environment.name}"
+
+
+class AnalysisIncident(models.Model):
+    STATUS_CHOICES = [
+        ("open", "Open"),
+        ("investigating", "Investigating"),
+        ("resolved", "Resolved"),
+    ]
+    incident_key = models.CharField(max_length=191, unique=True)
+    username = models.CharField(max_length=150)
+    action = models.CharField(max_length=50)
+    entity = models.CharField(max_length=100)
+    risk_score = models.IntegerField(default=0)
+    severity = models.CharField(max_length=20, default="low")
+    event_count = models.IntegerField(default=0)
+    source_ip_count = models.IntegerField(default=0)
+    reasons = JSONField(default=list, blank=True)
+    summary = models.CharField(max_length=500, blank=True, default="")
+    environment_label = models.CharField(max_length=100, blank=True, default="default")
+    cluster_label = models.CharField(max_length=100, blank=True, default="primary")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="open")
+    assignee = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="analysis_incidents")
+    false_positive = models.BooleanField(default=False)
+    analyst_notes = models.TextField(blank=True, default="")
+    routing_status = models.CharField(max_length=200, blank=True, default="")
+    first_seen_at = models.DateTimeField(null=True, blank=True)
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+    last_analyzed_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-risk_score", "-last_analyzed_at"]
+
+    def __str__(self):
+        return f"{self.incident_key} ({self.severity})"
+
+
+class AnalysisSavedQuery(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="analysis_saved_queries")
+    name = models.CharField(max_length=120)
+    query = models.CharField(max_length=500)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("user", "name")
+        ordering = ["name"]
+
+    def __str__(self):
+        return f"{self.user.username}:{self.name}"

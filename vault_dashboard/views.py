@@ -139,7 +139,7 @@ from django.contrib import messages
 from django.http import JsonResponse, HttpResponseForbidden
 from django.contrib.auth.models import User
 from django.core.cache import cache
-from django.db.models import Q
+from django.db.models import Q, Count, Avg
 from django.db import transaction
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
@@ -171,6 +171,8 @@ from .models import (
     DeletionApprovalRequest,
     UserFeatureAccess,
     EnvironmentSecretPolicy,
+    AnalysisIncident,
+    AnalysisSavedQuery,
 )
 from .utils import encrypt_value, decrypt_value
 from .feature_access import FEATURE_CATALOG, FEATURE_DEFAULTS, resolve_user_feature_visibility, user_has_feature
@@ -679,6 +681,56 @@ def run_vault_analysis(request):
     payload["delivery_plan"] = AlertingRouter().build_delivery_plan(payload.get("alert_groups", []))
     payload["analysis_window_hours"] = hours
 
+    now = timezone.now()
+    incidents = []
+    for alert in payload.get("alert_groups", []):
+        incident_key = f"{alert.get('username')}|{alert.get('action')}|{alert.get('entity')}"
+        incident, _ = AnalysisIncident.objects.update_or_create(
+            incident_key=incident_key,
+            defaults={
+                "username": alert.get("username", ""),
+                "action": alert.get("action", ""),
+                "entity": alert.get("entity", ""),
+                "risk_score": int(alert.get("risk_score", 0)),
+                "severity": alert.get("severity", "low"),
+                "event_count": int(alert.get("event_count", 0)),
+                "source_ip_count": int(alert.get("source_ip_count", 0)),
+                "reasons": alert.get("reasons", []),
+                "summary": " ".join(alert.get("reasons", []))[:500],
+                "routing_status": ", ".join(payload.get("delivery_plan", [])),
+                "first_seen_at": now,
+                "last_seen_at": now,
+            },
+        )
+        incidents.append(
+            {
+                "id": incident.id,
+                "incident_key": incident.incident_key,
+                "severity": incident.severity,
+                "risk_score": incident.risk_score,
+                "status": incident.status,
+                "assignee": incident.assignee.username if incident.assignee else "",
+                "username": incident.username,
+                "action": incident.action,
+                "entity": incident.entity,
+                "environment_label": incident.environment_label,
+                "cluster_label": incident.cluster_label,
+                "routing_status": incident.routing_status,
+                "false_positive": incident.false_positive,
+            }
+        )
+
+    payload["incidents"] = incidents
+    payload["dedup_groups_count"] = len(payload.get("alert_groups", []))
+    payload["baseline_comparison"] = payload.get("deviations", [])
+    payload["trend_dashboard"] = payload.get("predictive_warnings", [])
+    payload["audit_trail"] = list(
+        AuditLog.objects.select_related("user")
+        .filter(entity__in=["VaultAnalysis", "VaultAnalysisNLQ"])
+        .order_by("-timestamp")
+        .values("timestamp", "action", "entity", "details", "user__username")[:25]
+    )
+
     AuditLog.objects.create(
         user=request.user,
         action="READ",
@@ -714,6 +766,170 @@ def query_vault_analysis(request):
         ip_address=get_client_ip(request),
     )
     return JsonResponse(result)
+
+
+@login_required
+@require_GET
+def list_analysis_incidents(request):
+    if "vault_key" not in request.session:
+        return JsonResponse({"error": "Vault is sealed for this session."}, status=403)
+    if not user_has_feature(request.user, "analysis"):
+        return JsonResponse({"error": "You do not have vault analysis feature access."}, status=403)
+
+    queryset = AnalysisIncident.objects.select_related("assignee").all()
+    severity = (request.GET.get("severity") or "").strip().lower()
+    status = (request.GET.get("status") or "").strip().lower()
+    if severity:
+        queryset = queryset.filter(severity=severity)
+    if status:
+        queryset = queryset.filter(status=status)
+
+    rows = []
+    for incident in queryset[:200]:
+        rows.append(
+            {
+                "id": incident.id,
+                "incident_key": incident.incident_key,
+                "severity": incident.severity,
+                "risk_score": incident.risk_score,
+                "status": incident.status,
+                "assignee": incident.assignee.username if incident.assignee else "",
+                "username": incident.username,
+                "action": incident.action,
+                "entity": incident.entity,
+                "environment_label": incident.environment_label,
+                "cluster_label": incident.cluster_label,
+                "routing_status": incident.routing_status,
+                "false_positive": incident.false_positive,
+            }
+        )
+    return JsonResponse({"incidents": rows, "count": len(rows)})
+
+
+@login_required
+@require_GET
+def get_analysis_incident(request, incident_id):
+    if "vault_key" not in request.session:
+        return JsonResponse({"error": "Vault is sealed for this session."}, status=403)
+    if not user_has_feature(request.user, "analysis"):
+        return JsonResponse({"error": "You do not have vault analysis feature access."}, status=403)
+
+    incident = get_object_or_404(AnalysisIncident.objects.select_related("assignee"), id=incident_id)
+    timeline_rows = (
+        AuditLog.objects.filter(user__username=incident.username, action=incident.action, entity=incident.entity)
+        .extra(select={"hour": "strftime('%%Y-%%m-%%d %%H:00:00', timestamp)"})
+        .values("hour")
+        .annotate(count=Count("id"))
+        .order_by("hour")[:48]
+    )
+    timeline = [{"hour": row["hour"], "count": row["count"]} for row in timeline_rows]
+    identity_profile = {
+        "username": incident.username,
+        "open_incidents": AnalysisIncident.objects.filter(username=incident.username, status__in=["open", "investigating"]).count(),
+        "avg_risk": AnalysisIncident.objects.filter(username=incident.username).aggregate(avg=Avg("risk_score")).get("avg") or 0,
+    }
+    secret_profile = {
+        "entity": incident.entity,
+        "action": incident.action,
+        "incident_count": AnalysisIncident.objects.filter(entity=incident.entity, action=incident.action).count(),
+    }
+
+    return JsonResponse(
+        {
+            "incident": {
+                "id": incident.id,
+                "incident_key": incident.incident_key,
+                "severity": incident.severity,
+                "risk_score": incident.risk_score,
+                "status": incident.status,
+                "assignee_id": incident.assignee_id,
+                "assignee": incident.assignee.username if incident.assignee else "",
+                "username": incident.username,
+                "action": incident.action,
+                "entity": incident.entity,
+                "event_count": incident.event_count,
+                "source_ip_count": incident.source_ip_count,
+                "reasons": incident.reasons,
+                "summary": incident.summary,
+                "environment_label": incident.environment_label,
+                "cluster_label": incident.cluster_label,
+                "routing_status": incident.routing_status,
+                "false_positive": incident.false_positive,
+                "analyst_notes": incident.analyst_notes,
+            },
+            "timeline": timeline,
+            "identity_profile": identity_profile,
+            "secret_profile": secret_profile,
+        }
+    )
+
+
+@login_required
+def update_analysis_incident(request, incident_id):
+    if request.method != "POST":
+        return HttpResponseForbidden("Invalid request method")
+    if "vault_key" not in request.session:
+        return JsonResponse({"error": "Vault is sealed for this session."}, status=403)
+    if not user_has_feature(request.user, "analysis"):
+        return JsonResponse({"error": "You do not have vault analysis feature access."}, status=403)
+
+    incident = get_object_or_404(AnalysisIncident, id=incident_id)
+    status = (request.POST.get("status") or incident.status).strip().lower()
+    assignee_id = (request.POST.get("assignee_id") or "").strip()
+    notes = (request.POST.get("analyst_notes") or "").strip()
+    false_positive = bool(request.POST.get("false_positive"))
+
+    if status in {"open", "investigating", "resolved"}:
+        incident.status = status
+    incident.assignee = User.objects.filter(id=assignee_id).first() if assignee_id else None
+    incident.analyst_notes = notes
+    incident.false_positive = false_positive
+    incident.save()
+
+    AuditLog.objects.create(
+        user=request.user,
+        action="UPDATE",
+        entity="VaultAnalysisIncident",
+        details=f"Updated incident {incident.incident_key} status={incident.status} assignee={incident.assignee.username if incident.assignee else '-'} fp={incident.false_positive}",
+        ip_address=get_client_ip(request),
+    )
+    return JsonResponse({"ok": True})
+
+
+@login_required
+def save_analysis_query(request):
+    if request.method != "POST":
+        return HttpResponseForbidden("Invalid request method")
+    if "vault_key" not in request.session:
+        return JsonResponse({"error": "Vault is sealed for this session."}, status=403)
+    if not user_has_feature(request.user, "analysis"):
+        return JsonResponse({"error": "You do not have vault analysis feature access."}, status=403)
+
+    name = (request.POST.get("name") or "").strip()
+    query = (request.POST.get("query") or "").strip()
+    if not name or not query:
+        return JsonResponse({"error": "Name and query are required."}, status=400)
+    item, _ = AnalysisSavedQuery.objects.update_or_create(
+        user=request.user,
+        name=name,
+        defaults={"query": query},
+    )
+    return JsonResponse({"id": item.id, "name": item.name, "query": item.query})
+
+
+@login_required
+@require_GET
+def list_analysis_queries(request):
+    if "vault_key" not in request.session:
+        return JsonResponse({"error": "Vault is sealed for this session."}, status=403)
+    if not user_has_feature(request.user, "analysis"):
+        return JsonResponse({"error": "You do not have vault analysis feature access."}, status=403)
+    rows = list(
+        AnalysisSavedQuery.objects.filter(user=request.user)
+        .values("id", "name", "query")
+        .order_by("name")
+    )
+    return JsonResponse({"saved_queries": rows, "count": len(rows)})
 
 
 @login_required
