@@ -1274,7 +1274,7 @@
                                         type="button"
                                         data-bs-toggle="collapse"
                                         data-bs-target="#collapseFolder{{ folder.id }}">
-                                    📁 {{ folder.name }}
+                                    <span class="text-primary">📁</span> {{ folder.name }}
                                     <span class="badge bg-info text-dark ms-2">Risk: {{ folder.risk_score }}/100</span>
                                     <span class="badge bg-light text-dark ms-2">Owner: {{ folder.owner_email|default:"-" }}</span>
                                 </button>
