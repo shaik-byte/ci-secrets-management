@@ -1387,8 +1387,8 @@
                                                 <td class="secret-action-cell">
                                                     {% if secret.is_access_enabled or request.user.is_superuser %}
                                                     <button class="btn btn-outline-primary btn-sm"
-                                                            onclick="toggleSecret({{ secret.id }})">
-                                                        Show
+                                                            onclick="copySecret({{ secret.id }})">
+                                                        Copy
                                                     </button>
                                                     {% else %}
                                                     <span class="badge bg-secondary">Admin Locked</span>
@@ -1677,20 +1677,27 @@ function editAccessPolicy(button) {
     if (policySection) policySection.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-function toggleSecret(id) {
-    const element = document.getElementById(`secret-${id}`);
-    if (element.innerText === "******") {
-        fetch(`/secrets/reveal-secret/${id}/`)
-            .then(async res => {
-                const data = await res.json();
-                if (!res.ok) {
-                    alert(data.error || "Unable to reveal secret");
-                    return;
-                }
-                element.innerText = data.secret;
-            });
-    } else {
-        element.innerText = "******";
+async function copySecret(id) {
+    try {
+        const res = await fetch(`/secrets/copy-secret/${id}/`, {
+            headers: { "X-Requested-With": "XMLHttpRequest" },
+            credentials: "same-origin",
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            alert(data.error || "Unable to copy secret");
+            return;
+        }
+
+        if (!navigator.clipboard?.writeText) {
+            alert("Clipboard access is not supported in this browser.");
+            return;
+        }
+        await navigator.clipboard.writeText(data.secret || "");
+        alert("Secret copied to clipboard.");
+    } catch (error) {
+        console.error("Copy secret failed:", error);
+        alert("Unable to copy secret. Please try again.");
     }
 }
 

@@ -486,6 +486,29 @@ def reveal_secret(request, secret_id):
     return JsonResponse({"secret": decrypted})
 
 
+@login_required
+@require_GET
+def copy_secret(request, secret_id):
+    secret = get_object_or_404(Secret, id=secret_id)
+    if not _has_access(request.user, "read", secret=secret):
+        return JsonResponse({"error": "You do not have read access for this secret."}, status=403)
+
+    if not secret.is_access_enabled and not request.user.is_superuser:
+        return JsonResponse({"error": "Secret access is locked by admin."}, status=403)
+
+    decrypted = decrypt_value(request, secret.encrypted_value)
+
+    AuditLog.objects.create(
+        user=request.user,
+        action='COPY',
+        entity='Secret',
+        details=f"Copied secret '{secret.name}'",
+        ip_address=get_client_ip(request)
+    )
+
+    return JsonResponse({"secret": decrypted})
+
+
 def _within_search_rate_limit(user_id, limit=30, window_seconds=60, namespace="secret-path-search"):
     cache_key = f"{namespace}:{user_id}"
     current = cache.get(cache_key, 0)
