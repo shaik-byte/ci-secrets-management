@@ -139,10 +139,11 @@ from django.contrib import messages
 from django.http import JsonResponse, HttpResponseForbidden
 from django.contrib.auth.models import User
 from django.core.cache import cache
-from django.db.models import Q
+from django.db.models import Q, Count, Avg
 from django.db import transaction
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_GET
 from datetime import datetime, timedelta
 from fnmatch import fnmatch
 import json
@@ -168,8 +169,15 @@ from .models import (
     JWTWorkloadIdentity,
     MachineSessionToken,
     DeletionApprovalRequest,
+    UserFeatureAccess,
+    EnvironmentSecretPolicy,
+    AnalysisIncident,
+    AnalysisSavedQuery,
 )
 from .utils import encrypt_value, decrypt_value
+from .feature_access import FEATURE_CATALOG, FEATURE_DEFAULTS, resolve_user_feature_visibility, user_has_feature
+from .analysis import VaultAnalysisOrchestrator, AuditLogNLQueryEngine
+from .analysis.alerting import AlertingRouter
 
 from auditlogs.models import AuditLog
 
@@ -217,6 +225,17 @@ def _has_access(user, action, environment=None, folder=None, secret=None):
         scope |= Q(environment=secret.folder.environment, folder__isnull=True, secret__isnull=True)
 
     return AccessPolicy.objects.filter(filters & scope).exists()
+
+
+def _manageable_environments_for_settings(user):
+    if user.is_superuser:
+        return Environment.objects.all()
+
+    writable_ids = []
+    for env in Environment.objects.all():
+        if _has_access(user, "write", environment=env):
+            writable_ids.append(env.id)
+    return Environment.objects.filter(id__in=writable_ids)
 
 
 @login_required
@@ -269,7 +288,37 @@ def dashboard(request):
     ]
 
     users = User.objects.order_by("username")
+    visible_feature_keys = resolve_user_feature_visibility(request.user)
+    feature_rows = []
+    if request.user.is_superuser:
+        all_rules = UserFeatureAccess.objects.select_related("user").all()
+        rules_by_user = {}
+        for rule in all_rules:
+            rules_by_user.setdefault(rule.user_id, {})[rule.feature_key] = rule.can_view
+
+        for target_user in users:
+            explicit = rules_by_user.get(target_user.id, {})
+            row = []
+            for feature in FEATURE_CATALOG:
+                key = feature["key"]
+                default_enabled = feature["default_enabled"]
+                effective_enabled = True if target_user.is_superuser else explicit.get(key, default_enabled)
+                row.append({
+                    "key": key,
+                    "label": feature["label"],
+                    "enabled": effective_enabled,
+                    "locked": target_user.is_superuser,
+                })
+            feature_rows.append({"user": target_user, "features": row})
+
     all_secrets = Secret.objects.select_related("folder", "folder__environment").order_by("name")
+    env_policy_map = {
+        p.environment_id: p for p in EnvironmentSecretPolicy.objects.select_related("environment")
+    }
+    for env in environments:
+        env.secret_value_regex = env_policy_map.get(env.id).secret_value_regex if env.id in env_policy_map else policy.secret_value_regex
+        env.regex_mode = env_policy_map.get(env.id).regex_mode if env.id in env_policy_map else policy.regex_mode
+
     effective_access_rows = []
     for user in users:
         readable = []
@@ -298,9 +347,18 @@ def dashboard(request):
         "jwt_identities": JWTWorkloadIdentity.objects.select_related("machine_policy").order_by("name"),
         "new_approle_secret": request.session.pop("new_approle_secret", None),
         "new_approle_role_name": request.session.pop("new_approle_role_name", None),
-        "pending_deletion_approvals": DeletionApprovalRequest.objects.select_related("requested_by").filter(status="pending")[:100] if request.user.is_superuser else [],
-        "recent_deletion_approvals": DeletionApprovalRequest.objects.select_related("requested_by", "approver").exclude(status="pending")[:100] if request.user.is_superuser else [],
-        "recent_user_creations": AuditLog.objects.select_related("user").filter(action="CREATE", user__is_superuser=False).order_by("-timestamp")[:20] if request.user.is_superuser else [],
+        "pending_deletion_approvals": DeletionApprovalRequest.objects.select_related("requested_by").filter(status="pending")[:100] if "approvals" in visible_feature_keys else [],
+        "recent_deletion_approvals": DeletionApprovalRequest.objects.select_related("requested_by", "approver").exclude(status="pending")[:100] if "approvals" in visible_feature_keys else [],
+        "can_view_secrets": "secrets" in visible_feature_keys,
+        "can_view_settings": "settings" in visible_feature_keys,
+        "can_view_policy": "policy" in visible_feature_keys,
+        "can_view_approvals": "approvals" in visible_feature_keys,
+        "can_view_notifications": "notifications" in visible_feature_keys,
+        "can_view_audit_logs": "audit_logs" in visible_feature_keys,
+        "can_view_seal_vault": "seal_vault" in visible_feature_keys,
+        "can_view_analysis": "analysis" in visible_feature_keys,
+        "feature_rows": feature_rows,
+        "setting_environments": _manageable_environments_for_settings(request.user).order_by("name"),
     })
 
 
@@ -366,7 +424,9 @@ def add_secret(request, folder_id):
         value = request.POST.get("value")
         expire = request.POST.get("expire")
 
-        policy = SecretPolicy.objects.filter(created_by=request.user).first()
+        fallback_policy = SecretPolicy.objects.filter(created_by=request.user).first()
+        env_policy = EnvironmentSecretPolicy.objects.filter(environment=folder.environment).first()
+        policy = env_policy if (env_policy and env_policy.secret_value_regex) else fallback_policy
         regex_pattern = policy.secret_value_regex.strip() if policy else ""
         regex_mode = policy.regex_mode if policy else "match"
 
@@ -429,6 +489,447 @@ def reveal_secret(request, secret_id):
     )
 
     return JsonResponse({"secret": decrypted})
+
+
+@login_required
+@require_GET
+def copy_secret(request, secret_id):
+    secret = get_object_or_404(Secret, id=secret_id)
+    if not _has_access(request.user, "read", secret=secret):
+        return JsonResponse({"error": "You do not have read access for this secret."}, status=403)
+
+    if not secret.is_access_enabled and not request.user.is_superuser:
+        return JsonResponse({"error": "Secret access is locked by admin."}, status=403)
+
+    decrypted = decrypt_value(request, secret.encrypted_value)
+
+    AuditLog.objects.create(
+        user=request.user,
+        action='COPY',
+        entity='Secret',
+        details=f"Copied secret '{secret.name}'",
+        ip_address=get_client_ip(request)
+    )
+
+    return JsonResponse({"secret": decrypted})
+
+
+def _within_search_rate_limit(user_id, limit=30, window_seconds=60, namespace="secret-path-search"):
+    cache_key = f"{namespace}:{user_id}"
+    current = cache.get(cache_key, 0)
+    if current >= limit:
+        return False
+    cache.set(cache_key, current + 1, timeout=window_seconds)
+    return True
+
+
+@login_required
+@require_GET
+def search_secret_paths(request):
+    if "vault_key" not in request.session:
+        return JsonResponse({"error": "Vault is sealed for this session."}, status=403)
+
+    if not _within_search_rate_limit(request.user.id):
+        return JsonResponse({"error": "Too many search requests. Please retry shortly."}, status=429)
+
+    query = (request.GET.get("q") or "").strip()
+
+    if len(query) < 2:
+        return JsonResponse({"error": "Enter at least 2 characters to search."}, status=400)
+    if len(query) > 200:
+        return JsonResponse({"error": "Search query is too long."}, status=400)
+
+    search_scope = Secret.objects.select_related("folder", "folder__environment").filter(
+        Q(name__icontains=query)
+        | Q(service_name__icontains=query)
+        | Q(folder__name__icontains=query)
+        | Q(folder__environment__name__icontains=query)
+    ).order_by("name")
+
+    max_scan = 600
+    scanned = 0
+    matches = []
+    for secret in search_scope[:max_scan]:
+        scanned += 1
+        if not _has_access(request.user, "read", secret=secret):
+            continue
+
+        matches.append({
+            "secret_id": secret.id,
+            "environment_id": secret.folder.environment_id,
+            "folder_id": secret.folder_id,
+            "environment": secret.folder.environment.name,
+            "folder": secret.folder.name,
+            "secret_name": secret.name,
+            "service_name": secret.service_name,
+            "path": f"{secret.folder.environment.name}/{secret.folder.name}/{secret.name}",
+            "reveal_enabled": bool(secret.is_access_enabled or request.user.is_superuser),
+        })
+        if len(matches) >= 50:
+            break
+
+    AuditLog.objects.create(
+        user=request.user,
+        action="READ",
+        entity="SecretSearch",
+        details=f"Searched secret paths by metadata, query_len={len(query)}, results={len(matches)}",
+        ip_address=get_client_ip(request),
+    )
+
+    return JsonResponse({
+        "results": matches,
+        "count": len(matches),
+        "truncated": len(matches) >= 50 or scanned >= max_scan,
+    })
+
+
+@login_required
+@require_GET
+def search_expiring_secrets(request):
+    if "vault_key" not in request.session:
+        return JsonResponse({"error": "Vault is sealed for this session."}, status=403)
+
+    if not _within_search_rate_limit(request.user.id, namespace="expiring-secret-search"):
+        return JsonResponse({"error": "Too many requests. Please retry shortly."}, status=429)
+
+    window = (request.GET.get("window") or "today").strip().lower()
+    custom_date_raw = (request.GET.get("custom_date") or "").strip()
+
+    today = timezone.now().date()
+    if window == "today":
+        target_date = today
+        window_label = "Today"
+    elif window == "3days":
+        target_date = today + timedelta(days=3)
+        window_label = "In 3 days"
+    elif window == "5days":
+        target_date = today + timedelta(days=5)
+        window_label = "In 5 days"
+    elif window == "custom":
+        if not custom_date_raw:
+            return JsonResponse({"error": "Please select a custom date."}, status=400)
+        try:
+            target_date = datetime.strptime(custom_date_raw, "%Y-%m-%d").date()
+        except ValueError:
+            return JsonResponse({"error": "Invalid custom date format. Use YYYY-MM-DD."}, status=400)
+        window_label = f"Custom ({target_date.isoformat()})"
+    else:
+        return JsonResponse({"error": "Invalid expiration filter."}, status=400)
+
+    search_scope = Secret.objects.select_related("folder", "folder__environment").filter(
+        expire_date=target_date
+    ).order_by("name")
+
+    max_scan = 600
+    scanned = 0
+    matches = []
+    for secret in search_scope[:max_scan]:
+        scanned += 1
+        if not _has_access(request.user, "read", secret=secret):
+            continue
+
+        matches.append({
+            "secret_id": secret.id,
+            "environment_id": secret.folder.environment_id,
+            "folder_id": secret.folder_id,
+            "environment": secret.folder.environment.name,
+            "folder": secret.folder.name,
+            "secret_name": secret.name,
+            "service_name": secret.service_name,
+            "path": f"{secret.folder.environment.name}/{secret.folder.name}/{secret.name}",
+            "expire_date": secret.expire_date.isoformat() if secret.expire_date else "",
+            "days_until_expiry": (secret.expire_date - today).days if secret.expire_date else None,
+            "reveal_enabled": bool(secret.is_access_enabled or request.user.is_superuser),
+        })
+        if len(matches) >= 50:
+            break
+
+    AuditLog.objects.create(
+        user=request.user,
+        action="READ",
+        entity="SecretExpirySearch",
+        details=f"Searched expiring secrets, window={window}, target_date={target_date.isoformat()}, results={len(matches)}",
+        ip_address=get_client_ip(request),
+    )
+
+    return JsonResponse({
+        "results": matches,
+        "count": len(matches),
+        "window": window,
+        "window_label": window_label,
+        "target_date": target_date.isoformat(),
+        "truncated": len(matches) >= 50 or scanned >= max_scan,
+    })
+
+
+@login_required
+@require_GET
+def run_vault_analysis(request):
+    if "vault_key" not in request.session:
+        return JsonResponse({"error": "Vault is sealed for this session."}, status=403)
+    if not user_has_feature(request.user, "analysis"):
+        return JsonResponse({"error": "You do not have vault analysis feature access."}, status=403)
+
+    hours_raw = request.GET.get("hours", "24")
+    try:
+        hours = max(1, min(int(hours_raw), 24 * 30))
+    except ValueError:
+        return JsonResponse({"error": "Invalid analysis window."}, status=400)
+
+    orchestrator = VaultAnalysisOrchestrator()
+    payload = orchestrator.run(hours=hours)
+    payload["delivery_plan"] = AlertingRouter().build_delivery_plan(payload.get("alert_groups", []))
+    payload["analysis_window_hours"] = hours
+
+    now = timezone.now()
+    incidents = []
+    for alert in payload.get("alert_groups", []):
+        incident_key = f"{alert.get('username')}|{alert.get('action')}|{alert.get('entity')}"
+        incident, _ = AnalysisIncident.objects.update_or_create(
+            incident_key=incident_key,
+            defaults={
+                "username": alert.get("username", ""),
+                "action": alert.get("action", ""),
+                "entity": alert.get("entity", ""),
+                "risk_score": int(alert.get("risk_score", 0)),
+                "severity": alert.get("severity", "low"),
+                "event_count": int(alert.get("event_count", 0)),
+                "source_ip_count": int(alert.get("source_ip_count", 0)),
+                "reasons": alert.get("reasons", []),
+                "summary": " ".join(alert.get("reasons", []))[:500],
+                "routing_status": ", ".join(payload.get("delivery_plan", [])),
+                "first_seen_at": now,
+                "last_seen_at": now,
+            },
+        )
+        incidents.append(
+            {
+                "id": incident.id,
+                "incident_key": incident.incident_key,
+                "severity": incident.severity,
+                "risk_score": incident.risk_score,
+                "status": incident.status,
+                "assignee": incident.assignee.username if incident.assignee else "",
+                "username": incident.username,
+                "action": incident.action,
+                "entity": incident.entity,
+                "environment_label": incident.environment_label,
+                "cluster_label": incident.cluster_label,
+                "routing_status": incident.routing_status,
+                "false_positive": incident.false_positive,
+            }
+        )
+
+    payload["incidents"] = incidents
+    payload["dedup_groups_count"] = len(payload.get("alert_groups", []))
+    payload["baseline_comparison"] = payload.get("deviations", [])
+    payload["trend_dashboard"] = payload.get("predictive_warnings", [])
+    payload["audit_trail"] = list(
+        AuditLog.objects.select_related("user")
+        .filter(entity__in=["VaultAnalysis", "VaultAnalysisNLQ"])
+        .order_by("-timestamp")
+        .values("timestamp", "action", "entity", "details", "user__username")[:25]
+    )
+
+    AuditLog.objects.create(
+        user=request.user,
+        action="READ",
+        entity="VaultAnalysis",
+        details=f"Ran vault analysis (hours={hours}, alerts={len(payload.get('alert_groups', []))})",
+        ip_address=get_client_ip(request),
+    )
+    return JsonResponse(payload)
+
+
+@login_required
+@require_GET
+def query_vault_analysis(request):
+    if "vault_key" not in request.session:
+        return JsonResponse({"error": "Vault is sealed for this session."}, status=403)
+    if not user_has_feature(request.user, "analysis"):
+        return JsonResponse({"error": "You do not have vault analysis feature access."}, status=403)
+
+    query_text = (request.GET.get("q") or "").strip()
+    if not query_text:
+        return JsonResponse({"error": "Query is empty."}, status=400)
+
+    engine = AuditLogNLQueryEngine()
+    result = engine.query(query_text, limit=120)
+    if result.get("error"):
+        return JsonResponse(result, status=400)
+
+    AuditLog.objects.create(
+        user=request.user,
+        action="READ",
+        entity="VaultAnalysisNLQ",
+        details=f"Executed vault NL query (len={len(query_text)}, results={result.get('count', 0)})",
+        ip_address=get_client_ip(request),
+    )
+    return JsonResponse(result)
+
+
+@login_required
+@require_GET
+def list_analysis_incidents(request):
+    if "vault_key" not in request.session:
+        return JsonResponse({"error": "Vault is sealed for this session."}, status=403)
+    if not user_has_feature(request.user, "analysis"):
+        return JsonResponse({"error": "You do not have vault analysis feature access."}, status=403)
+
+    queryset = AnalysisIncident.objects.select_related("assignee").all()
+    severity = (request.GET.get("severity") or "").strip().lower()
+    status = (request.GET.get("status") or "").strip().lower()
+    if severity:
+        queryset = queryset.filter(severity=severity)
+    if status:
+        queryset = queryset.filter(status=status)
+
+    rows = []
+    for incident in queryset[:200]:
+        rows.append(
+            {
+                "id": incident.id,
+                "incident_key": incident.incident_key,
+                "severity": incident.severity,
+                "risk_score": incident.risk_score,
+                "status": incident.status,
+                "assignee": incident.assignee.username if incident.assignee else "",
+                "username": incident.username,
+                "action": incident.action,
+                "entity": incident.entity,
+                "environment_label": incident.environment_label,
+                "cluster_label": incident.cluster_label,
+                "routing_status": incident.routing_status,
+                "false_positive": incident.false_positive,
+            }
+        )
+    return JsonResponse({"incidents": rows, "count": len(rows)})
+
+
+@login_required
+@require_GET
+def get_analysis_incident(request, incident_id):
+    if "vault_key" not in request.session:
+        return JsonResponse({"error": "Vault is sealed for this session."}, status=403)
+    if not user_has_feature(request.user, "analysis"):
+        return JsonResponse({"error": "You do not have vault analysis feature access."}, status=403)
+
+    incident = get_object_or_404(AnalysisIncident.objects.select_related("assignee"), id=incident_id)
+    timeline_rows = (
+        AuditLog.objects.filter(user__username=incident.username, action=incident.action, entity=incident.entity)
+        .extra(select={"hour": "strftime('%%Y-%%m-%%d %%H:00:00', timestamp)"})
+        .values("hour")
+        .annotate(count=Count("id"))
+        .order_by("hour")[:48]
+    )
+    timeline = [{"hour": row["hour"], "count": row["count"]} for row in timeline_rows]
+    identity_profile = {
+        "username": incident.username,
+        "open_incidents": AnalysisIncident.objects.filter(username=incident.username, status__in=["open", "investigating"]).count(),
+        "avg_risk": AnalysisIncident.objects.filter(username=incident.username).aggregate(avg=Avg("risk_score")).get("avg") or 0,
+    }
+    secret_profile = {
+        "entity": incident.entity,
+        "action": incident.action,
+        "incident_count": AnalysisIncident.objects.filter(entity=incident.entity, action=incident.action).count(),
+    }
+
+    return JsonResponse(
+        {
+            "incident": {
+                "id": incident.id,
+                "incident_key": incident.incident_key,
+                "severity": incident.severity,
+                "risk_score": incident.risk_score,
+                "status": incident.status,
+                "assignee_id": incident.assignee_id,
+                "assignee": incident.assignee.username if incident.assignee else "",
+                "username": incident.username,
+                "action": incident.action,
+                "entity": incident.entity,
+                "event_count": incident.event_count,
+                "source_ip_count": incident.source_ip_count,
+                "reasons": incident.reasons,
+                "summary": incident.summary,
+                "environment_label": incident.environment_label,
+                "cluster_label": incident.cluster_label,
+                "routing_status": incident.routing_status,
+                "false_positive": incident.false_positive,
+                "analyst_notes": incident.analyst_notes,
+            },
+            "timeline": timeline,
+            "identity_profile": identity_profile,
+            "secret_profile": secret_profile,
+        }
+    )
+
+
+@login_required
+def update_analysis_incident(request, incident_id):
+    if request.method != "POST":
+        return HttpResponseForbidden("Invalid request method")
+    if "vault_key" not in request.session:
+        return JsonResponse({"error": "Vault is sealed for this session."}, status=403)
+    if not user_has_feature(request.user, "analysis"):
+        return JsonResponse({"error": "You do not have vault analysis feature access."}, status=403)
+
+    incident = get_object_or_404(AnalysisIncident, id=incident_id)
+    status = (request.POST.get("status") or incident.status).strip().lower()
+    assignee_id = (request.POST.get("assignee_id") or "").strip()
+    notes = (request.POST.get("analyst_notes") or "").strip()
+    false_positive = bool(request.POST.get("false_positive"))
+
+    if status in {"open", "investigating", "resolved"}:
+        incident.status = status
+    incident.assignee = User.objects.filter(id=assignee_id).first() if assignee_id else None
+    incident.analyst_notes = notes
+    incident.false_positive = false_positive
+    incident.save()
+
+    AuditLog.objects.create(
+        user=request.user,
+        action="UPDATE",
+        entity="VaultAnalysisIncident",
+        details=f"Updated incident {incident.incident_key} status={incident.status} assignee={incident.assignee.username if incident.assignee else '-'} fp={incident.false_positive}",
+        ip_address=get_client_ip(request),
+    )
+    return JsonResponse({"ok": True})
+
+
+@login_required
+def save_analysis_query(request):
+    if request.method != "POST":
+        return HttpResponseForbidden("Invalid request method")
+    if "vault_key" not in request.session:
+        return JsonResponse({"error": "Vault is sealed for this session."}, status=403)
+    if not user_has_feature(request.user, "analysis"):
+        return JsonResponse({"error": "You do not have vault analysis feature access."}, status=403)
+
+    name = (request.POST.get("name") or "").strip()
+    query = (request.POST.get("query") or "").strip()
+    if not name or not query:
+        return JsonResponse({"error": "Name and query are required."}, status=400)
+    item, _ = AnalysisSavedQuery.objects.update_or_create(
+        user=request.user,
+        name=name,
+        defaults={"query": query},
+    )
+    return JsonResponse({"id": item.id, "name": item.name, "query": item.query})
+
+
+@login_required
+@require_GET
+def list_analysis_queries(request):
+    if "vault_key" not in request.session:
+        return JsonResponse({"error": "Vault is sealed for this session."}, status=403)
+    if not user_has_feature(request.user, "analysis"):
+        return JsonResponse({"error": "You do not have vault analysis feature access."}, status=403)
+    rows = list(
+        AnalysisSavedQuery.objects.filter(user=request.user)
+        .values("id", "name", "query")
+        .order_by("name")
+    )
+    return JsonResponse({"saved_queries": rows, "count": len(rows)})
 
 
 @login_required
@@ -598,8 +1099,8 @@ def delete_secret(request, secret_id):
 def approve_deletion_request(request, approval_id):
     if request.method != "POST":
         return HttpResponseForbidden("Invalid request method")
-    if not request.user.is_superuser:
-        return HttpResponseForbidden("Only admin can approve deletion requests.")
+    if not user_has_feature(request.user, "approvals"):
+        return HttpResponseForbidden("You do not have approvals feature access.")
 
     approval = get_object_or_404(DeletionApprovalRequest, id=approval_id, status="pending")
     target_obj = _resolve_delete_target(approval)
@@ -639,8 +1140,8 @@ def approve_deletion_request(request, approval_id):
 def reject_deletion_request(request, approval_id):
     if request.method != "POST":
         return HttpResponseForbidden("Invalid request method")
-    if not request.user.is_superuser:
-        return HttpResponseForbidden("Only admin can reject deletion requests.")
+    if not user_has_feature(request.user, "approvals"):
+        return HttpResponseForbidden("You do not have approvals feature access.")
 
     approval = get_object_or_404(DeletionApprovalRequest, id=approval_id, status="pending")
     approval.status = "rejected"
@@ -665,8 +1166,8 @@ def reject_deletion_request(request, approval_id):
 def toggle_environment_delete_approval(request, env_id):
     if request.method != "POST":
         return HttpResponseForbidden("Invalid request method")
-    if not request.user.is_superuser:
-        return HttpResponseForbidden("Only admin can change approval mode.")
+    if not user_has_feature(request.user, "approvals"):
+        return HttpResponseForbidden("You do not have approvals feature access.")
 
     env = get_object_or_404(Environment, id=env_id)
     env.require_admin_delete_approval = not env.require_admin_delete_approval
@@ -686,9 +1187,14 @@ def toggle_environment_delete_approval(request, env_id):
 
 @login_required
 def save_secret_policy(request):
+    if not user_has_feature(request.user, "settings"):
+        return HttpResponseForbidden("You do not have settings feature access.")
+
     if request.method == "POST":
         pattern = (request.POST.get("secret_value_regex") or "").strip()
         regex_mode = (request.POST.get("regex_mode") or "match").strip()
+        apply_all = bool(request.POST.get("apply_all_environments"))
+        selected_env_ids = request.POST.getlist("environment_ids")
 
         if regex_mode not in {"match", "not_match"}:
             regex_mode = "match"
@@ -705,8 +1211,61 @@ def save_secret_policy(request):
         policy.regex_mode = regex_mode
         policy.save(update_fields=["secret_value_regex", "regex_mode", "updated_at"])
 
-        messages.success(request, "Secret regex policy saved successfully.")
+        manageable_envs = _manageable_environments_for_settings(request.user)
+        if apply_all:
+            target_envs = manageable_envs
+        else:
+            target_envs = manageable_envs.filter(id__in=selected_env_ids)
+            if not target_envs.exists():
+                messages.error(request, "Select at least one environment or choose Apply All Environments.")
+                return redirect("vault_dashboard")
 
+        with transaction.atomic():
+            for env in target_envs:
+                EnvironmentSecretPolicy.objects.update_or_create(
+                    environment=env,
+                    defaults={
+                        "secret_value_regex": pattern,
+                        "regex_mode": regex_mode,
+                        "updated_by": request.user,
+                    },
+                )
+
+        messages.success(request, f"Secret regex policy applied to {target_envs.count()} environment(s).")
+
+    return redirect("vault_dashboard")
+
+
+@login_required
+def save_feature_access(request):
+    if request.method != "POST":
+        return HttpResponseForbidden("Invalid request method")
+    if not request.user.is_superuser:
+        return HttpResponseForbidden("Only admin can manage feature visibility.")
+
+    user_id = request.POST.get("user_id")
+    target_user = get_object_or_404(User, id=user_id)
+    if target_user.is_superuser:
+        messages.info(request, "Superusers always retain access to all features.")
+        return redirect("vault_dashboard")
+
+    selected = set(request.POST.getlist("enabled_features"))
+    allowed_keys = set(FEATURE_DEFAULTS.keys())
+
+    with transaction.atomic():
+        for key in allowed_keys:
+            desired = key in selected
+            default_value = FEATURE_DEFAULTS.get(key, False)
+            if desired == default_value:
+                UserFeatureAccess.objects.filter(user=target_user, feature_key=key).delete()
+            else:
+                UserFeatureAccess.objects.update_or_create(
+                    user=target_user,
+                    feature_key=key,
+                    defaults={"can_view": desired},
+                )
+
+    messages.success(request, f"Updated feature visibility for '{target_user.username}'.")
     return redirect("vault_dashboard")
 
 
@@ -714,8 +1273,8 @@ def save_secret_policy(request):
 def save_access_policy_ui(request):
     if request.method != "POST":
         return HttpResponseForbidden("Invalid request method")
-    if not request.user.is_superuser:
-        return HttpResponseForbidden("Only admin can manage policy engine access.")
+    if not user_has_feature(request.user, "policy"):
+        return HttpResponseForbidden("You do not have policy engine feature access.")
 
     policy_id = request.POST.get("policy_id")
     user_id = request.POST.get("user_id")
@@ -777,8 +1336,8 @@ def save_access_policy_ui(request):
 def save_access_policy_document(request):
     if request.method != "POST":
         return HttpResponseForbidden("Invalid request method")
-    if not request.user.is_superuser:
-        return HttpResponseForbidden("Only admin can manage policy engine access.")
+    if not user_has_feature(request.user, "policy"):
+        return HttpResponseForbidden("You do not have policy engine feature access.")
 
     raw = (request.POST.get("policy_document") or "").strip()
     doc_format = (request.POST.get("document_format") or "json").strip().lower()
@@ -833,8 +1392,8 @@ def save_access_policy_document(request):
 def delete_access_policy(request, policy_id):
     if request.method != "POST":
         return HttpResponseForbidden("Invalid request method")
-    if not request.user.is_superuser:
-        return HttpResponseForbidden("Only admin can manage policy engine access.")
+    if not user_has_feature(request.user, "policy"):
+        return HttpResponseForbidden("You do not have policy engine feature access.")
 
     policy = get_object_or_404(AccessPolicy, id=policy_id)
     policy.delete()
@@ -846,8 +1405,8 @@ def delete_access_policy(request, policy_id):
 def create_policy_group(request):
     if request.method != "POST":
         return HttpResponseForbidden("Invalid request method")
-    if not request.user.is_superuser:
-        return HttpResponseForbidden("Only admin can manage policy groups.")
+    if not user_has_feature(request.user, "policy"):
+        return HttpResponseForbidden("You do not have policy engine feature access.")
 
     name = (request.POST.get("name") or "").strip()
     description = (request.POST.get("description") or "").strip()
@@ -867,8 +1426,8 @@ def create_policy_group(request):
 def add_user_to_policy_group(request):
     if request.method != "POST":
         return HttpResponseForbidden("Invalid request method")
-    if not request.user.is_superuser:
-        return HttpResponseForbidden("Only admin can manage policy groups.")
+    if not user_has_feature(request.user, "policy"):
+        return HttpResponseForbidden("You do not have policy engine feature access.")
 
     group = get_object_or_404(PolicyGroup, id=request.POST.get("group_id"))
     user = get_object_or_404(User, id=request.POST.get("user_id"))
@@ -881,8 +1440,8 @@ def add_user_to_policy_group(request):
 def remove_user_from_policy_group(request):
     if request.method != "POST":
         return HttpResponseForbidden("Invalid request method")
-    if not request.user.is_superuser:
-        return HttpResponseForbidden("Only admin can manage policy groups.")
+    if not user_has_feature(request.user, "policy"):
+        return HttpResponseForbidden("You do not have policy engine feature access.")
 
     group = get_object_or_404(PolicyGroup, id=request.POST.get("group_id"))
     user = get_object_or_404(User, id=request.POST.get("user_id"))
@@ -895,8 +1454,8 @@ def remove_user_from_policy_group(request):
 def attach_policy_to_group(request):
     if request.method != "POST":
         return HttpResponseForbidden("Invalid request method")
-    if not request.user.is_superuser:
-        return HttpResponseForbidden("Only admin can manage policy groups.")
+    if not user_has_feature(request.user, "policy"):
+        return HttpResponseForbidden("You do not have policy engine feature access.")
 
     group = get_object_or_404(PolicyGroup, id=request.POST.get("group_id"))
     policy = get_object_or_404(AccessPolicy, id=request.POST.get("policy_id"))
@@ -909,8 +1468,8 @@ def attach_policy_to_group(request):
 def detach_policy_from_group(request):
     if request.method != "POST":
         return HttpResponseForbidden("Invalid request method")
-    if not request.user.is_superuser:
-        return HttpResponseForbidden("Only admin can manage policy groups.")
+    if not user_has_feature(request.user, "policy"):
+        return HttpResponseForbidden("You do not have policy engine feature access.")
 
     group = get_object_or_404(PolicyGroup, id=request.POST.get("group_id"))
     policy = get_object_or_404(AccessPolicy, id=request.POST.get("policy_id"))
@@ -923,8 +1482,8 @@ def detach_policy_from_group(request):
 def save_policy_groups_document(request):
     if request.method != "POST":
         return HttpResponseForbidden("Invalid request method")
-    if not request.user.is_superuser:
-        return HttpResponseForbidden("Only admin can manage policy groups.")
+    if not user_has_feature(request.user, "policy"):
+        return HttpResponseForbidden("You do not have policy engine feature access.")
 
     raw = (request.POST.get("group_policy_document") or "").strip()
     doc_format = (request.POST.get("group_document_format") or "json").strip().lower()
@@ -1133,8 +1692,8 @@ def jwt_machine_login(request):
 def save_machine_policy(request):
     if request.method != "POST":
         return HttpResponseForbidden("Invalid request method")
-    if not request.user.is_superuser:
-        return HttpResponseForbidden("Only admin can manage machine auth policies.")
+    if not user_has_feature(request.user, "policy"):
+        return HttpResponseForbidden("You do not have policy engine feature access.")
 
     name = (request.POST.get("name") or "").strip()
     description = (request.POST.get("description") or "").strip()
@@ -1159,8 +1718,8 @@ def save_machine_policy(request):
 def save_approle(request):
     if request.method != "POST":
         return HttpResponseForbidden("Invalid request method")
-    if not request.user.is_superuser:
-        return HttpResponseForbidden("Only admin can manage AppRole.")
+    if not user_has_feature(request.user, "policy"):
+        return HttpResponseForbidden("You do not have policy engine feature access.")
 
     name = (request.POST.get("name") or "").strip()
     if not name:
@@ -1195,8 +1754,8 @@ def save_approle(request):
 def save_jwt_workload_identity(request):
     if request.method != "POST":
         return HttpResponseForbidden("Invalid request method")
-    if not request.user.is_superuser:
-        return HttpResponseForbidden("Only admin can manage JWT identities.")
+    if not user_has_feature(request.user, "policy"):
+        return HttpResponseForbidden("You do not have policy engine feature access.")
 
     name = (request.POST.get("name") or "").strip()
     if not name:
@@ -1223,8 +1782,8 @@ def save_jwt_workload_identity(request):
 def save_machine_auth_document(request):
     if request.method != "POST":
         return HttpResponseForbidden("Invalid request method")
-    if not request.user.is_superuser:
-        return HttpResponseForbidden("Only admin can manage machine auth.")
+    if not user_has_feature(request.user, "policy"):
+        return HttpResponseForbidden("You do not have policy engine feature access.")
 
     raw = (request.POST.get("machine_auth_document") or "").strip()
     doc_format = (request.POST.get("machine_auth_format") or "json").strip().lower()

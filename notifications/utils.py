@@ -1,13 +1,17 @@
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+
 from .models import EmailConfig
 
 
 def send_expiry_email(user, secret):
-
     config = EmailConfig.objects.filter(created_by=user).first()
     if not config:
+        return
+
+    app_password = config.get_app_password()
+    if not app_password:
         return
 
     msg = MIMEMultipart()
@@ -16,10 +20,6 @@ def send_expiry_email(user, secret):
     msg['Cc'] = config.cc_email if config.cc_email else ""
     msg['Subject'] = f"Secret Expiry Alert: {secret.name}"
 
-    # body = f"""
-    # Secret '{secret.name}' is expiring on {secret.expire_date}.
-    # Please rotate or update it immediately.
-    # """
     body = f"""
     🚨 SECRET EXPIRY ALERT 🚨
 
@@ -36,13 +36,13 @@ def send_expiry_email(user, secret):
     msg.attach(MIMEText(body, 'plain'))
 
     recipients = (
-        config.to_email.split(",") +
-        (config.cc_email.split(",") if config.cc_email else []) +
-        (config.bcc_email.split(",") if config.bcc_email else [])
+        config.to_email.split(",")
+        + (config.cc_email.split(",") if config.cc_email else [])
+        + (config.bcc_email.split(",") if config.bcc_email else [])
     )
 
     server = smtplib.SMTP("smtp.gmail.com", 587)
     server.starttls()
-    server.login(config.from_email, config.app_password)
+    server.login(config.from_email, app_password)
     server.sendmail(config.from_email, recipients, msg.as_string())
     server.quit()

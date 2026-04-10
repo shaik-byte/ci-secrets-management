@@ -1,7 +1,6 @@
+from django.core.cache import cache
 from django.db import connections
 from django.shortcuts import redirect
-from django.urls import reverse
-from django.core.cache import cache
 
 
 class VaultHardSealMiddleware:
@@ -10,10 +9,6 @@ class VaultHardSealMiddleware:
     ALLOWED_PREFIXES = (
         "/initialize/",
         "/unseal/",
-        "/begin-auth/",
-        "/finish-auth/",
-        "/begin-registration/",
-        "/finish-registration/",
         "/login/",
         "/logout/",
         "/admin/",
