@@ -47,8 +47,11 @@
                 <input type="password"
                        name="app_password"
                        class="form-control"
-                       value="{{ config.app_password }}"
-                       required>
+                       {% if not has_app_password %}required{% endif %}
+                       placeholder="{% if has_app_password %}Saved securely. Enter only to replace.{% else %}Enter Gmail App Password{% endif %}">
+                {% if has_app_password %}
+                <div class="form-text text-success">A password is already stored securely. Leave blank to keep current password.</div>
+                {% endif %}
             </div>
 
             <button type="submit" class="btn btn-primary w-100">
