@@ -1,10 +1,7 @@
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponseForbidden
-from django.shortcuts import redirect, render
-
-from vault_dashboard.feature_access import user_has_feature
-
 from .models import EmailConfig
+from vault_dashboard.feature_access import user_has_feature
 
 
 @login_required

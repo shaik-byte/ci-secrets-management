@@ -11,7 +11,7 @@ class SessionAuthRequiredMiddleware:
     """
 
     PROTECTED_PREFIXES = ("/secrets/", "/notifications/", "/audit-logs/")
-    EXEMPT_PREFIXES = ("/login/", "/logout/", "/initialize/", "/unseal/")
+    EXEMPT_PREFIXES = ("/login/", "/logout/", "/initialize/", "/unseal/", "/begin-auth/", "/finish-auth/", "/begin-registration/", "/finish-registration/")
 
     def __init__(self, get_response):
         self.get_response = get_response
@@ -21,6 +21,7 @@ class SessionAuthRequiredMiddleware:
 
         if path.startswith(self.PROTECTED_PREFIXES) and not path.startswith(self.EXEMPT_PREFIXES):
             if not request.user.is_authenticated:
+                # Redirect unauthenticated users to login (with `next`) for protected pages.
                 return redirect(f"/login/?next={path}")
 
         return self.get_response(request)

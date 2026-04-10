@@ -207,6 +207,10 @@ def login_view(request):
         user = authenticate(request, username=username, password=password)
 
         if user:
+            # Session creation point:
+            # 1) authenticate credentials
+            # 2) login() binds authenticated user to server-side session
+            # 3) cycle_key() protects against session fixation
             login(request, user)
             request.session.cycle_key()
             request.session["auth_user"] = {
@@ -233,6 +237,8 @@ def dashboard(request):
 
 
 def logout_view(request):
+    # Session destruction point:
+    # logout() removes authenticated user state; flush() destroys session data.
     logout(request)
     request.session.flush()
     return redirect("login")
