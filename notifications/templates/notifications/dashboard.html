@@ -54,6 +54,23 @@
                 {% endif %}
             </div>
 
+            <hr class="my-4">
+
+            <h5 class="mb-3">💬 Integrate with Google Chat</h5>
+            <div class="mb-3">
+                <label class="form-label">Google Chat Incoming Webhook URL</label>
+                <input type="url"
+                       name="google_chat_webhook"
+                       class="form-control"
+                       placeholder="{% if has_google_chat_webhook %}Saved securely. Enter only to replace.{% else %}https://chat.googleapis.com/...{% endif %}">
+                <div class="form-text">
+                    Create an Incoming Webhook in your Google Chat space and paste the webhook URL here.
+                </div>
+                {% if has_google_chat_webhook %}
+                <div class="form-text text-success">A Google Chat webhook is already stored securely. Leave blank to keep current webhook.</div>
+                {% endif %}
+            </div>
+
             <button type="submit" class="btn btn-primary w-100">
                 Save Configuration
             </button>

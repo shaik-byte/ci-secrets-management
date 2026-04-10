@@ -18,6 +18,7 @@ def notification_dashboard(request):
         {
             "config": config,
             "has_app_password": bool(config and config.has_app_password),
+            "has_google_chat_webhook": bool(config and config.has_google_chat_webhook),
         },
     )
 
@@ -38,6 +39,10 @@ def save_notification_config(request):
         submitted_app_password = (request.POST.get("app_password") or "").strip()
         if submitted_app_password:
             config.set_app_password(submitted_app_password)
+
+        submitted_google_chat_webhook = (request.POST.get("google_chat_webhook") or "").strip()
+        if submitted_google_chat_webhook:
+            config.set_google_chat_webhook(submitted_google_chat_webhook)
 
         config.save()
 
