@@ -58,10 +58,10 @@
         }
 
         .sidebar {
-            width: 240px;
-            background: linear-gradient(180deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.98) 100%);
+            width: 230px;
+            background: linear-gradient(180deg, #0b1324 0%, #111f38 55%, #17233b 100%);
             border-right: 1px solid rgba(148, 163, 184, 0.2);
-            padding: 22px 14px;
+            padding: 20px 12px;
             position: sticky;
             top: 0;
             height: 100vh;
@@ -83,11 +83,12 @@
             width: 100%;
             border: 0;
             text-align: left;
-            padding: 12px 12px;
+            padding: 10px 12px;
             border-radius: 10px;
             background: transparent;
             color: #cbd5e1;
             font-weight: 600;
+            font-size: 0.95rem;
             transition: all 0.2s ease;
         }
 
@@ -111,10 +112,127 @@
         .policy-doc-editor::placeholder {
             color: #9ca3af !important;
         }
+
+        .env-controls {
+            min-width: 220px;
+            justify-content: flex-end;
+        }
+
+        .env-approval-switch .form-check-input {
+            margin-top: 0;
+        }
+
+        .env-approval-switch .form-check-label {
+            font-size: 0.82rem !important;
+            font-weight: 600;
+            line-height: 1.1;
+            white-space: nowrap;
+        }
+
+        .folder-create-form .form-control,
+        .folder-create-form .btn,
+        .secret-form .form-control,
+        .secret-form .btn {
+            min-height: 38px;
+        }
+
+        .secret-table th,
+        .secret-table td {
+            vertical-align: middle;
+        }
+
+        .secret-action-cell {
+            display: flex;
+            gap: 0.4rem;
+            flex-wrap: nowrap;
+            align-items: center;
+            justify-content: flex-start;
+        }
+
+        #section-secrets .btn {
+            border-radius: 8px;
+        }
+
+        #section-secrets .btn-sm {
+            font-size: 0.78rem;
+            padding: 0.25rem 0.6rem;
+            min-height: 32px;
+        }
+
+        #section-secrets .env-controls {
+            min-width: 260px;
+        }
+
+        #section-secrets .env-controls form {
+            margin: 0;
+        }
+
+        #section-secrets .env-approval-switch {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        #section-secrets .folder-create-form .col-md-2 .btn {
+            min-width: 120px;
+            font-weight: 600;
+        }
+
+        #section-secrets .secret-form .col-md-2:last-child {
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        #section-secrets .secret-form .btn-success {
+            min-width: 130px;
+            font-weight: 600;
+        }
+
+        #section-secrets .secret-action-cell .btn {
+            min-width: 74px;
+            justify-content: center;
+        }
+
+        #section-secrets .secret-action-cell form {
+            margin: 0;
+        }
+
+        #section-secrets .folder-row-btn {
+            padding-right: 2.75rem;
+        }
+
+        #section-secrets .folder-header-actions {
+            min-width: 90px;
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            margin-right: 0.75rem;
+        }
+
+        .dashboard-search-card .result-path {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            font-size: 0.86rem;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 0.25rem 0.5rem;
+            display: inline-block;
+        }
+
+        .folder-icon svg {
+            width: 1rem;
+            height: 1rem;
+            vertical-align: -0.125em;
+        }
     </style>
 </head>
 
 <body>
+{{ session_state|json_script:"session-state-data" }}
+<script>
+    // Frontend-visible session/auth snapshot (derived from server session/user).
+    window.__SESSION_STATE__ = JSON.parse(document.getElementById("session-state-data").textContent);
+</script>
 
 <div class="app-shell">
     <aside class="sidebar">
@@ -122,18 +240,32 @@
         <button id="nav-dashboard" class="sidebar-item active" type="button" onclick="showSection('dashboard')">
             Dashboard
         </button>
+        {% if can_view_secrets %}
         <button id="nav-secrets" class="sidebar-item" type="button" onclick="showSection('secrets')">
             Secrets Manager
         </button>
+        {% endif %}
+        {% if can_view_settings %}
         <button id="nav-settings" class="sidebar-item" type="button" onclick="showSection('settings')">
             Settings
         </button>
-        {% if request.user.is_superuser %}
+        {% endif %}
+        {% if can_view_policy %}
         <button id="nav-policy" class="sidebar-item" type="button" onclick="showSection('policy')">
             Policy Engine
         </button>
         {% endif %}
         {% if request.user.is_superuser %}
+        <button id="nav-feature-core" class="sidebar-item" type="button" onclick="showSection('feature-core')">
+            Feature Core
+        </button>
+        {% endif %}
+        {% if can_view_analysis %}
+        <button id="nav-analysis" class="sidebar-item" type="button" onclick="showSection('analysis')">
+            Vault Analysis
+        </button>
+        {% endif %}
+        {% if can_view_approvals %}
         <button id="nav-approvals" class="sidebar-item" type="button" onclick="showSection('approvals')">
             Approvals
         </button>
@@ -147,20 +279,24 @@
 
         <div class="d-flex align-items-center gap-3">
             <span class="badge rounded-pill text-bg-light" title="Logged in user">
-                👤 {{ request.user.username }}
+                {{ request.user.username }}
             </span>
+            {% if can_view_notifications %}
             <a href="{% url 'notifications' %}" class="btn btn-outline-primary btn-sm">
-                📧 Notifications
+                Notifications
             </a>
-            <a href="{% url 'audit_dashboard' %}" class="btn btn-outline-dark btn-sm">
-                📜 Audit Logs
+            {% endif %}
+            {% if can_view_audit_logs %}
+            <a href="{% url 'audit_dashboard' %}" class="btn btn-outline-primary btn-sm">
+                Audit Logs
             </a>
+            {% endif %}
 
-            {% if request.user.is_superuser %}
+            {% if can_view_seal_vault %}
             <form method="POST" action="{% url 'seal' %}" class="d-inline">
                 {% csrf_token %}
                 <button type="submit" class="btn btn-outline-danger btn-sm">
-                    🔒 Seal Vault
+                    Seal Vault
                 </button>
             </form>
             {% endif %}
@@ -184,40 +320,243 @@
         <p class="text-muted mb-0">Click <strong>Secrets Manager</strong> to load all secrets on the right side.</p>
     </div>
 
-    {% if request.user.is_superuser %}
-    <div id="superuser-activity" class="card p-4 mb-4 shadow-sm">
-        <h5 class="mb-2">Latest user-created resources</h5>
-        <p class="text-muted mb-3">This reflects items created by normal users (environment/folder/secret) in real time.</p>
-        <div class="table-responsive">
-            <table class="table table-sm table-striped align-middle">
-                <thead class="table-dark">
+    <div id="secret-path-search-panel" class="card p-4 mb-4 shadow-sm dashboard-search-card">
+        <h5 class="mb-2">Find secret location</h5>
+        <p class="text-muted mb-3">Search by secret metadata (name/service/path). Results only include secrets you can read.</p>
+        <form id="secret-path-search-form" class="row g-2 align-items-end">
+            <div class="col-md-10">
+                <label for="secret-path-query" class="form-label">Search</label>
+                <input id="secret-path-query" name="q" type="text" maxlength="200" class="form-control" placeholder="Example: STRIPE_API_KEY">
+            </div>
+            <div class="col-md-2 d-grid">
+                <button type="submit" class="btn btn-primary">Search</button>
+            </div>
+        </form>
+        <div id="secret-path-search-feedback" class="small mt-3 text-muted"></div>
+        <div class="table-responsive mt-2 d-none" id="secret-path-search-results-wrap">
+            <table class="table table-sm align-middle">
+                <thead>
                     <tr>
-                        <th>User</th>
-                        <th>Entity</th>
-                        <th>Details</th>
-                        <th>Timestamp</th>
+                        <th>Secret</th>
+                        <th>Service</th>
+                        <th>Location</th>
+                        <th>Quick Action</th>
                     </tr>
                 </thead>
-                <tbody>
-                    {% for log in recent_user_creations %}
-                    <tr>
-                        <td>{{ log.user.username }}</td>
-                        <td>{{ log.entity }}</td>
-                        <td>{{ log.details }}</td>
-                        <td>{{ log.timestamp }}</td>
-                    </tr>
-                    {% empty %}
-                    <tr>
-                        <td colspan="4" class="text-muted text-center">No normal-user creation activity yet.</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
+                <tbody id="secret-path-search-results"></tbody>
             </table>
         </div>
     </div>
-    {% endif %}
+
+    <div id="expiring-secrets-panel" class="card p-4 mb-4 shadow-sm dashboard-search-card">
+        <h5 class="mb-2">About to expire secrets</h5>
+        <p class="text-muted mb-3">Find readable secrets that expire on a selected date filter.</p>
+        <form id="expiring-secrets-form" class="row g-2 align-items-end">
+            <div id="expiring-secret-window-wrap" class="col-md-10">
+                <label for="expiring-secret-window" class="form-label">Filter</label>
+                <select id="expiring-secret-window" name="window" class="form-select">
+                    <option value="today">Today</option>
+                    <option value="3days">In 3 days</option>
+                    <option value="5days">In 5 days</option>
+                    <option value="custom">Custom date</option>
+                </select>
+            </div>
+            <div class="col-md-2 d-none" id="expiring-secret-custom-date-wrap">
+                <label for="expiring-secret-custom-date" class="form-label">Custom date</label>
+                <input id="expiring-secret-custom-date" name="custom_date" type="date" class="form-control">
+            </div>
+            <div class="col-md-2 d-grid">
+                <button type="submit" class="btn btn-primary">Search</button>
+            </div>
+        </form>
+        <div id="expiring-secrets-feedback" class="small mt-3 text-muted"></div>
+        <div class="table-responsive mt-2 d-none" id="expiring-secrets-results-wrap">
+            <table class="table table-sm align-middle">
+                <thead>
+                    <tr>
+                        <th>Secret</th>
+                        <th>Service</th>
+                        <th>Location</th>
+                        <th>Expire Date</th>
+                        <th>Quick Action</th>
+                    </tr>
+                </thead>
+                <tbody id="expiring-secrets-results"></tbody>
+            </table>
+        </div>
+    </div>
+
 </div>
 
+{% if can_view_analysis %}
+<div id="section-analysis" class="container mt-1" style="display:none;">
+    <div class="card p-4 mb-4 shadow-sm">
+        <h5 class="mb-2">Vault Analysis (AI-powered V1)</h5>
+        <p class="text-muted mb-3">Explainable analytics over audit logs. Raw secret values are never displayed.</p>
+
+        <form id="analysis-run-form" class="row g-2 align-items-end">
+            <div class="col-md-10">
+                <label for="analysis-window-hours" class="form-label">Analysis window</label>
+                <select id="analysis-window-hours" class="form-select">
+                    <option value="24">Last 24 hours</option>
+                    <option value="72">Last 3 days</option>
+                    <option value="168">Last 7 days</option>
+                    <option value="720">Last 30 days</option>
+                </select>
+            </div>
+            <div class="col-md-2 d-grid">
+                <button type="submit" class="btn btn-primary">Run Analysis</button>
+            </div>
+        </form>
+
+        <div id="analysis-feedback" class="small mt-3 text-muted"></div>
+        <div id="analysis-summary" class="mt-2"></div>
+        <div id="analysis-kpis" class="small text-muted mb-2"></div>
+        <div class="row g-2 mb-2">
+            <div class="col-md-3">
+                <select id="incident-filter-severity" class="form-select form-select-sm">
+                    <option value="">All severity</option>
+                    <option value="critical">Critical</option>
+                    <option value="high">High</option>
+                    <option value="medium">Medium</option>
+                    <option value="low">Low</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <select id="incident-filter-status" class="form-select form-select-sm">
+                    <option value="">All status</option>
+                    <option value="open">Open</option>
+                    <option value="investigating">Investigating</option>
+                    <option value="resolved">Resolved</option>
+                </select>
+            </div>
+            <div class="col-md-6 text-end">
+                <button type="button" id="incident-filter-apply" class="btn btn-outline-primary btn-sm">Apply Incident Filters</button>
+            </div>
+        </div>
+        <div class="table-responsive mt-3 d-none" id="analysis-alerts-wrap">
+            <table class="table table-sm align-middle">
+                <thead>
+                    <tr>
+                        <th>Incident</th>
+                        <th>User</th>
+                        <th>Action</th>
+                        <th>Entity</th>
+                        <th>Severity</th>
+                        <th>Score</th>
+                        <th>Status/Assignee</th>
+                        <th>Env/Cluster</th>
+                        <th>Routing</th>
+                        <th>Why</th>
+                    </tr>
+                </thead>
+                <tbody id="analysis-alerts-body"></tbody>
+            </table>
+        </div>
+        <div id="analysis-delivery-plan" class="small text-muted"></div>
+        <div id="analysis-audit-trail" class="small text-muted mt-2"></div>
+    </div>
+
+    <div class="card p-4 mb-4 shadow-sm d-none" id="incident-detail-card">
+        <h5 class="mb-2">Incident Details</h5>
+        <div id="incident-detail-header" class="small text-muted mb-2"></div>
+        <div id="incident-score-breakdown" class="mb-2"></div>
+        <div id="incident-timeline-chart" class="mb-3"></div>
+
+        <div class="row g-3">
+            <div class="col-md-6">
+                <h6>Identity Profile</h6>
+                <div id="incident-identity-profile" class="small text-muted"></div>
+            </div>
+            <div class="col-md-6">
+                <h6>Secret/Path Profile</h6>
+                <div id="incident-secret-profile" class="small text-muted"></div>
+            </div>
+        </div>
+
+        <form id="incident-workflow-form" class="row g-2 align-items-end mt-2">
+            <input type="hidden" id="incident-workflow-id">
+            <div class="col-md-3">
+                <label class="form-label">Status</label>
+                <select id="incident-workflow-status" class="form-select">
+                    <option value="open">Open</option>
+                    <option value="investigating">Investigating</option>
+                    <option value="resolved">Resolved</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Assignee</label>
+                <select id="incident-workflow-assignee" class="form-select">
+                    <option value="">Unassigned</option>
+                    {% for user in users %}
+                    <option value="{{ user.id }}">{{ user.username }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Analyst Notes</label>
+                <input id="incident-workflow-notes" type="text" class="form-control" placeholder="Add investigation notes">
+            </div>
+            <div class="col-md-2 form-check mt-4">
+                <input id="incident-workflow-fp" class="form-check-input" type="checkbox">
+                <label class="form-check-label" for="incident-workflow-fp">False Positive</label>
+            </div>
+            <div class="col-md-12 text-end">
+                <button type="submit" class="btn btn-primary btn-sm">Save Workflow</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="card p-4 mb-4 shadow-sm">
+        <h5 class="mb-2">Natural language query (Audit Logs)</h5>
+        <p class="text-muted mb-3">Examples: “who accessed what today”, “policy changes this week”, “session activity for alice”.</p>
+        <form id="analysis-query-form" class="row g-2 align-items-end">
+            <div class="col-md-10">
+                <label for="analysis-nl-query" class="form-label">Query</label>
+                <input id="analysis-nl-query" type="text" maxlength="300" class="form-control" placeholder="Type a natural language audit query">
+            </div>
+            <div class="col-md-2 d-grid">
+                <button type="submit" class="btn btn-primary">Run Query</button>
+            </div>
+        </form>
+        <div id="analysis-query-feedback" class="small mt-3 text-muted"></div>
+        <div class="small text-muted mb-2">
+            Suggestions:
+            <button type="button" class="btn btn-link btn-sm p-0 analysis-query-suggestion" data-query="who accessed what today">who accessed what today</button> ·
+            <button type="button" class="btn btn-link btn-sm p-0 analysis-query-suggestion" data-query="policy changes this week">policy changes this week</button> ·
+            <button type="button" class="btn btn-link btn-sm p-0 analysis-query-suggestion" data-query="session activity for admin">session activity for admin</button>
+        </div>
+        <form id="analysis-save-query-form" class="row g-2 align-items-end mb-2">
+            <div class="col-md-4">
+                <input id="analysis-save-query-name" type="text" class="form-control" placeholder="Saved query name">
+            </div>
+            <div class="col-md-6">
+                <input id="analysis-save-query-text" type="text" class="form-control" placeholder="Query text to save">
+            </div>
+            <div class="col-md-2 d-grid">
+                <button type="submit" class="btn btn-outline-primary">Save Query</button>
+            </div>
+        </form>
+        <div id="analysis-saved-query-list" class="small text-muted mb-2"></div>
+        <div class="table-responsive mt-3 d-none" id="analysis-query-wrap">
+            <table class="table table-sm align-middle">
+                <thead>
+                    <tr>
+                        <th>Timestamp</th>
+                        <th>User</th>
+                        <th>Action</th>
+                        <th>Entity</th>
+                        <th>IP</th>
+                    </tr>
+                </thead>
+                <tbody id="analysis-query-body"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if can_view_settings %}
 <div id="section-settings" class="container mt-1" style="display:none;">
     <div class="card p-4 mb-4 shadow-sm">
         <h5 class="mb-3">Secret Validation Settings</h5>
@@ -235,14 +574,82 @@
                     <option value="not_match" {% if secret_policy.regex_mode == 'not_match' %}selected{% endif %}>Should Not Match</option>
                 </select>
             </div>
+            <div class="col-md-3 form-check mt-4">
+                <input class="form-check-input" type="checkbox" id="apply-all-environments" name="apply_all_environments">
+                <label class="form-check-label" for="apply-all-environments">Apply All Environments</label>
+            </div>
+            <div class="col-md-12">
+                <label class="form-label mb-2">Or select environments</label>
+                <div id="environment-checkboxes" class="border rounded p-2" style="max-height: 180px; overflow-y: auto;">
+                    {% for env in setting_environments %}
+                    <div class="form-check">
+                        <input class="form-check-input env-checkbox" type="checkbox" name="environment_ids" value="{{ env.id }}" id="env-checkbox-{{ env.id }}">
+                        <label class="form-check-label" for="env-checkbox-{{ env.id }}">
+                            {{ env.name }}
+                        </label>
+                    </div>
+                    {% empty %}
+                    <div class="text-muted small">No environments available.</div>
+                    {% endfor %}
+                </div>
+                <small class="text-muted">Select one or more environments, or choose Apply All Environments.</small>
+            </div>
             <div class="col-md-3">
                 <button type="submit" class="btn btn-primary w-100">Save Regex</button>
             </div>
         </form>
     </div>
 </div>
+{% endif %}
 
 {% if request.user.is_superuser %}
+<div id="section-feature-core" class="container mt-1" style="display:none;">
+    <div class="card p-4 mb-4 shadow-sm">
+        <h5 class="mb-3">Feature Core</h5>
+        <p class="text-muted mb-3">Control which vault features are visible to each user. Superusers keep full access by default.</p>
+        <div class="table-responsive">
+            <table class="table table-sm align-middle">
+                <thead>
+                    <tr>
+                        <th>User</th>
+                        <th>Feature Visibility</th>
+                        <th class="text-end">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in feature_rows %}
+                    <tr>
+                        <td>
+                            <strong>{{ row.user.username }}</strong>
+                            {% if row.user.is_superuser %}
+                            <span class="badge bg-dark ms-2">Superuser</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <form id="feature-form-{{ forloop.counter }}" method="POST" action="{% url 'save_feature_access' %}" class="d-flex flex-wrap gap-2 align-items-center">
+                                {% csrf_token %}
+                                <input type="hidden" name="user_id" value="{{ row.user.id }}">
+                                {% for feature in row.features %}
+                                <label class="form-check form-check-inline border rounded px-2 py-1 {% if feature.locked %}bg-light{% endif %}">
+                                    <input class="form-check-input" type="checkbox" name="enabled_features" value="{{ feature.key }}" {% if feature.enabled %}checked{% endif %} {% if feature.locked %}disabled{% endif %}>
+                                    <span class="form-check-label">{{ feature.label }}</span>
+                                </label>
+                                {% endfor %}
+                            </form>
+                        </td>
+                        <td class="text-end">
+                            <button type="submit" form="feature-form-{{ forloop.counter }}" class="btn btn-primary btn-sm" {% if row.user.is_superuser %}disabled{% endif %}>Save</button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if can_view_policy %}
 <div id="section-policy" class="container mt-1" style="display:none;">
     <div class="card p-4 mb-4 shadow-sm">
         <h5 class="mb-3">User Access Control (UI)</h5>
@@ -834,7 +1241,7 @@
 </div>
 {% endif %}
 
-{% if request.user.is_superuser %}
+{% if can_view_approvals %}
 <div id="section-approvals" class="container mt-1" style="display:none;">
     <div class="card p-4 mb-4 shadow-sm">
         <h5 class="mb-2">Deletion Approvals</h5>
@@ -922,6 +1329,7 @@
 </div>
 {% endif %}
 
+{% if can_view_secrets %}
 <div id="section-secrets" class="container mt-1" style="display:none;">
     <!-- ADD ENVIRONMENT -->
     <div class="card p-4 mb-4 shadow-sm">
@@ -945,19 +1353,29 @@
                     {{ env.name }}
                     {% if request.user.is_superuser %}
                     <span class="badge bg-light text-dark ms-2">Created by: {{ env.created_by.username }}</span>
-                    <span class="badge {% if env.require_admin_delete_approval %}bg-warning text-dark{% else %}bg-secondary{% endif %} ms-2">
+                    <span class="badge {% if env.require_admin_delete_approval %}bg-primary text-light{% else %}bg-secondary{% endif %} ms-2">
                         Approval: {% if env.require_admin_delete_approval %}Enabled{% else %}Disabled{% endif %}
                     </span>
                     {% endif %}
                 </button>
 
-                <div class="d-flex align-items-center gap-2 me-3">
+                <div class="d-flex align-items-center gap-2 me-3 env-controls">
                     {% if request.user.is_superuser %}
                     <form method="POST" action="{% url 'toggle_environment_delete_approval' env.id %}">
                         {% csrf_token %}
-                        <button type="submit" class="btn btn-outline-warning btn-sm">
-                            {% if env.require_admin_delete_approval %}Disable Approval{% else %}Enable Approval{% endif %}
-                        </button>
+                        <div class="form-check form-switch m-0 env-approval-switch">
+                            <input
+                                class="form-check-input"
+                                type="checkbox"
+                                role="switch"
+                                id="approval-switch-env-{{ env.id }}"
+                                {% if env.require_admin_delete_approval %}checked{% endif %}
+                                onchange="this.form.requestSubmit ? this.form.requestSubmit() : this.form.submit()"
+                            >
+                            <label class="form-check-label text-muted" for="approval-switch-env-{{ env.id }}" style="font-size: 0.95rem; line-height: 1.2;">
+                                Enable Approval
+                            </label>
+                        </div>
                     </form>
                     {% endif %}
                     <button class="btn btn-outline-danger btn-sm"
@@ -1013,11 +1431,17 @@
                     <!-- ADD FOLDER -->
                     <form method="POST"
                           action="{% url 'add_folder' env.id %}"
-                          class="d-flex gap-2 mb-3">
+                          class="row g-2 mb-3 folder-create-form align-items-center">
                         {% csrf_token %}
-                        <input type="text" name="name" class="form-control" placeholder="Folder Name" required>
-                        <input type="email" name="owner_email" class="form-control" placeholder="Folder Owner Email">
-                        <button type="submit" class="btn btn-secondary btn-sm">Add Folder</button>
+                        <div class="col-md-5">
+                            <input type="text" name="name" class="form-control" placeholder="Folder Name" required>
+                        </div>
+                        <div class="col-md-5">
+                            <input type="email" name="owner_email" class="form-control" placeholder="Folder Owner Email">
+                        </div>
+                        <div class="col-md-2">
+                            <button type="submit" class="btn btn-secondary w-100">Add Folder</button>
+                        </div>
                     </form>
 
                     <div class="accordion" id="folderAccordion{{ env.id }}">
@@ -1025,20 +1449,26 @@
                         <div class="accordion-item mb-2">
 
                             <h2 class="accordion-header d-flex justify-content-between align-items-center">
-                                <button class="accordion-button collapsed"
+                                <button class="accordion-button collapsed folder-row-btn"
                                         type="button"
                                         data-bs-toggle="collapse"
                                         data-bs-target="#collapseFolder{{ folder.id }}">
-                                    📁 {{ folder.name }}
+                                    <span class="folder-icon text-primary me-1" aria-hidden="true">
+                                        <svg viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                                            <path d="M9.828 3a3 3 0 0 1 2.122.879l.172.172A3 3 0 0 0 14.243 5H14.5A1.5 1.5 0 0 1 16 6.5v6A1.5 1.5 0 0 1 14.5 14h-13A1.5 1.5 0 0 1 0 12.5V3.5A1.5 1.5 0 0 1 1.5 2h3.586a1.5 1.5 0 0 1 1.06.44l.586.585A1.5 1.5 0 0 0 7.793 3z"/>
+                                        </svg>
+                                    </span>{{ folder.name }}
                                     <span class="badge bg-info text-dark ms-2">Risk: {{ folder.risk_score }}/100</span>
                                     <span class="badge bg-light text-dark ms-2">Owner: {{ folder.owner_email|default:"-" }}</span>
                                 </button>
 
-                                <button class="btn btn-outline-danger btn-sm me-3"
-                                        data-bs-toggle="modal"
-                                        data-bs-target="#deleteFolderModal{{ folder.id }}">
-                                    Delete
-                                </button>
+                                <div class="folder-header-actions">
+                                    <button class="btn btn-outline-danger btn-sm"
+                                            data-bs-toggle="modal"
+                                            data-bs-target="#deleteFolderModal{{ folder.id }}">
+                                        Delete
+                                    </button>
+                                </div>
                             </h2>
 
                             <!-- DELETE FOLDER MODAL -->
@@ -1087,8 +1517,8 @@
                                     <form method="POST"
                                           action="{% url 'add_secret' folder.id %}"
                                           class="row g-2 mb-3 secret-form"
-                                          data-secret-regex="{{ secret_policy.secret_value_regex|escapejs }}"
-                                          data-regex-mode="{{ secret_policy.regex_mode|default:'match' }}">
+                                          data-secret-regex="{{ env.secret_value_regex|default:''|escapejs }}"
+                                          data-regex-mode="{{ env.regex_mode|default:'match' }}">
                                         {% csrf_token %}
                                         <div class="col-md-2">
                                             <input type="text" name="name" class="form-control" placeholder="Secret Name" required>
@@ -1099,16 +1529,16 @@
                                         <div class="col-md-4">
                                             <input type="text" name="value" class="form-control" placeholder="Secret Value" required>
                                         </div>
-                                        <div class="col-md-1">
+                                        <div class="col-md-2">
                                             <input type="date" name="expire" class="form-control">
                                         </div>
-                                        <div class="col-md-1">
+                                        <div class="col-md-2">
                                             <button type="submit" class="btn btn-success w-100">Add Secret</button>
                                         </div>
                                     </form>
 
                                     <!-- SECRET TABLE -->
-                                    <table class="table table-sm table-striped align-middle">
+                                    <table class="table table-sm table-striped align-middle secret-table">
                                         <thead class="table-dark">
                                             <tr>
                                                 <th>Name</th>
@@ -1127,15 +1557,21 @@
                                                     <span id="secret-{{ secret.id }}" class="secret-value">******</span>
                                                 </td>
                                                 <td>{{ secret.expire_date }}</td>
-                                                <td class="d-flex gap-2 flex-wrap">
+                                                <td class="secret-action-cell">
                                                     {% if secret.is_access_enabled or request.user.is_superuser %}
                                                     <button class="btn btn-outline-primary btn-sm"
-                                                            onclick="toggleSecret({{ secret.id }})">
-                                                        Show
+                                                            onclick="copySecret({{ secret.id }})">
+                                                        Copy
                                                     </button>
                                                     {% else %}
                                                     <span class="badge bg-secondary">Admin Locked</span>
                                                     {% endif %}
+
+                                                    <button class="btn btn-outline-danger btn-sm"
+                                                            data-bs-toggle="modal"
+                                                            data-bs-target="#deleteSecretModal{{ secret.id }}">
+                                                        Delete
+                                                    </button>
 
                                                     {% if request.user.is_superuser %}
                                                     <form method="POST" action="{% url 'toggle_secret_access' secret.id %}">
@@ -1145,12 +1581,6 @@
                                                         </button>
                                                     </form>
                                                     {% endif %}
-
-                                                    <button class="btn btn-outline-danger btn-sm"
-                                                            data-bs-toggle="modal"
-                                                            data-bs-target="#deleteSecretModal{{ secret.id }}">
-                                                        Delete
-                                                    </button>
                                                 </td>
                                             </tr>
 
@@ -1212,24 +1642,29 @@
         {% endfor %}
     </div>
 </div>
+{% endif %}
     </main>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
 <script>
-function showSection(section) {
-    const sections = ["secrets", "settings", "policy", "approvals"];
+function showSection(section, options = {}) {
+    const { updateUrl = true } = options;
+    const sections = ["secrets", "settings", "feature-core", "analysis", "policy", "approvals"];
     const sectionTitles = {
         dashboard: "Dashboard",
         secrets: "Secrets Manager",
         settings: "Settings",
+        "feature-core": "Feature Core",
+        analysis: "Vault Analysis",
         policy: "Policy Engine",
         approvals: "Approvals",
     };
 
     const welcome = document.getElementById("welcome-panel");
-    const superuserActivity = document.getElementById("superuser-activity");
+    const secretPathSearchPanel = document.getElementById("secret-path-search-panel");
+    const expiringSecretsPanel = document.getElementById("expiring-secrets-panel");
     const dashboardBtn = document.getElementById("nav-dashboard");
     const pageTitle = document.getElementById("page-title");
     const isDashboard = section === "dashboard" || !section;
@@ -1249,15 +1684,126 @@ function showSection(section) {
     if (welcome) {
         welcome.style.display = isDashboard ? "block" : "none";
     }
-    if (superuserActivity) {
-        superuserActivity.style.display = isDashboard ? "block" : "none";
+    if (secretPathSearchPanel) {
+        secretPathSearchPanel.style.display = isDashboard ? "block" : "none";
     }
-
+    if (expiringSecretsPanel) {
+        expiringSecretsPanel.style.display = isDashboard ? "block" : "none";
+    }
     const normalizedSection = isDashboard ? "dashboard" : section;
     if (pageTitle) {
         pageTitle.innerText = sectionTitles[normalizedSection] || "Dashboard";
     }
+
+    if (normalizedSection === "dashboard" || document.getElementById(`section-${normalizedSection}`)) {
+        localStorage.setItem("vault_active_section", normalizedSection);
+    }
+
+    if (updateUrl) {
+        const url = new URL(window.location.href);
+        if (normalizedSection === "dashboard") {
+            url.searchParams.delete("section");
+        } else {
+            url.searchParams.set("section", normalizedSection);
+        }
+        window.history.pushState({ section: normalizedSection }, "", url);
+    }
 }
+
+document.addEventListener("DOMContentLoaded", function () {
+    const requestedSection = new URLSearchParams(window.location.search).get("section");
+    const savedSection = localStorage.getItem("vault_active_section");
+    const preferredSection = requestedSection || savedSection || "dashboard";
+    const sectionExists = preferredSection === "dashboard" || document.getElementById(`section-${preferredSection}`);
+    showSection(sectionExists ? preferredSection : "dashboard", { updateUrl: false });
+
+    const applyAllCheckbox = document.getElementById("apply-all-environments");
+    const envCheckboxes = document.querySelectorAll(".env-checkbox");
+    if (!applyAllCheckbox || !envCheckboxes.length) return;
+
+    const syncState = () => {
+        envCheckboxes.forEach((checkbox) => {
+            checkbox.disabled = applyAllCheckbox.checked;
+        });
+    };
+    applyAllCheckbox.addEventListener("change", syncState);
+    syncState();
+});
+
+function isAjaxManagedForm(form) {
+    if (!form) return false;
+    const method = (form.method || "GET").toUpperCase();
+    if (method !== "POST") return false;
+    if (form.dataset.noAjax === "true") return false;
+
+    const actionUrl = new URL(form.action || window.location.href, window.location.href);
+    if (actionUrl.origin !== window.location.origin) return false;
+    if (actionUrl.pathname.includes("/logout")) return false;
+
+    return true;
+}
+
+async function refreshContentArea(sectionName = "secrets") {
+    const response = await fetch(window.location.href, {
+        headers: { "X-Requested-With": "XMLHttpRequest" },
+        credentials: "same-origin",
+    });
+    const html = await response.text();
+    const parsed = new DOMParser().parseFromString(html, "text/html");
+    const newContent = parsed.querySelector(".content-area");
+    const currentContent = document.querySelector(".content-area");
+    if (newContent && currentContent) {
+        currentContent.innerHTML = newContent.innerHTML;
+        showSection(sectionName, { updateUrl: false });
+        clearModalArtifacts();
+    }
+}
+
+window.addEventListener("popstate", function (event) {
+    const sectionFromState = event.state?.section;
+    const sectionFromUrl = new URLSearchParams(window.location.search).get("section");
+    const targetSection = sectionFromState || sectionFromUrl || "dashboard";
+    showSection(targetSection, { updateUrl: false });
+});
+
+function clearModalArtifacts() {
+    document.querySelectorAll(".modal-backdrop").forEach((backdrop) => backdrop.remove());
+    document.body.classList.remove("modal-open");
+    document.body.style.removeProperty("overflow");
+    document.body.style.removeProperty("padding-right");
+}
+
+document.addEventListener("submit", async function (event) {
+    const form = event.target;
+    if (!isAjaxManagedForm(form)) return;
+
+    event.preventDefault();
+    const formData = new FormData(form);
+    const activeSection = localStorage.getItem("vault_active_section") || "dashboard";
+    const modalElement = form.closest(".modal");
+
+    try {
+        if (modalElement && window.bootstrap?.Modal) {
+            const modalInstance = bootstrap.Modal.getInstance(modalElement);
+            if (modalInstance) {
+                modalInstance.hide();
+            }
+            clearModalArtifacts();
+        }
+
+        await fetch(form.action, {
+            method: form.method || "POST",
+            body: formData,
+            headers: { "X-Requested-With": "XMLHttpRequest" },
+            credentials: "same-origin",
+            redirect: "follow",
+        });
+        await refreshContentArea(activeSection);
+    } catch (error) {
+        console.error("Action failed:", error);
+        window.alert("Something went wrong while saving. Please try again.");
+    }
+});
 
 function resetAccessPolicyForm() {
     const policyId = document.getElementById("access-policy-id");
@@ -1305,21 +1851,563 @@ function editAccessPolicy(button) {
     if (policySection) policySection.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-function toggleSecret(id) {
-    const element = document.getElementById(`secret-${id}`);
-    if (element.innerText === "******") {
-        fetch(`/secrets/reveal-secret/${id}/`)
-            .then(async res => {
-                const data = await res.json();
-                if (!res.ok) {
-                    alert(data.error || "Unable to reveal secret");
-                    return;
-                }
-                element.innerText = data.secret;
-            });
-    } else {
-        element.innerText = "******";
+async function copySecret(id) {
+    try {
+        const res = await fetch(`/secrets/copy-secret/${id}/`, {
+            headers: { "X-Requested-With": "XMLHttpRequest" },
+            credentials: "same-origin",
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            alert(data.error || "Unable to copy secret");
+            return;
+        }
+
+        if (!navigator.clipboard?.writeText) {
+            alert("Clipboard access is not supported in this browser.");
+            return;
+        }
+        await navigator.clipboard.writeText(data.secret || "");
+        alert("Secret copied to clipboard.");
+    } catch (error) {
+        console.error("Copy secret failed:", error);
+        alert("Unable to copy secret. Please try again.");
     }
+}
+
+function openSecretLocation(item) {
+    showSection("secrets");
+
+    const expandCollapse = (collapseId) => {
+        const collapseEl = document.getElementById(collapseId);
+        if (!collapseEl) return;
+        if (window.bootstrap?.Collapse) {
+            bootstrap.Collapse.getOrCreateInstance(collapseEl, { toggle: false }).show();
+        } else {
+            collapseEl.classList.add("show");
+        }
+    };
+
+    window.setTimeout(() => {
+        if (item.environment_id) {
+            expandCollapse(`collapseEnv${item.environment_id}`);
+        }
+        window.setTimeout(() => {
+            if (item.folder_id) {
+                expandCollapse(`collapseFolder${item.folder_id}`);
+            }
+            window.setTimeout(() => {
+                document.getElementById(`secret-${item.secret_id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+            }, 160);
+        }, 180);
+    }, 80);
+}
+
+async function searchSecretPaths(event) {
+    event.preventDefault();
+    const queryInput = document.getElementById("secret-path-query");
+    const feedback = document.getElementById("secret-path-search-feedback");
+    const resultsWrap = document.getElementById("secret-path-search-results-wrap");
+    const resultsBody = document.getElementById("secret-path-search-results");
+    if (!queryInput || !feedback || !resultsWrap || !resultsBody) return;
+
+    const query = queryInput.value.trim();
+    if (query.length < 2) {
+        feedback.textContent = "Please enter at least 2 characters.";
+        feedback.className = "small mt-3 text-danger";
+        resultsWrap.classList.add("d-none");
+        return;
+    }
+
+    feedback.textContent = "Searching…";
+    feedback.className = "small mt-3 text-muted";
+
+    try {
+        const params = new URLSearchParams({ q: query });
+        const res = await fetch(`/secrets/search-secret-paths/?${params.toString()}`, {
+            headers: { "X-Requested-With": "XMLHttpRequest" },
+            credentials: "same-origin",
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            feedback.textContent = data.error || "Search failed. Please try again.";
+            feedback.className = "small mt-3 text-danger";
+            resultsWrap.classList.add("d-none");
+            return;
+        }
+
+        resultsBody.innerHTML = "";
+        if (!data.results || data.results.length === 0) {
+            feedback.textContent = "No matching secrets were found in your accessible scope.";
+            feedback.className = "small mt-3 text-muted";
+            resultsWrap.classList.add("d-none");
+            return;
+        }
+
+        data.results.forEach((item) => {
+            const row = document.createElement("tr");
+            const secretTd = document.createElement("td");
+            const secretStrong = document.createElement("strong");
+            secretStrong.textContent = item.secret_name || "—";
+            secretTd.appendChild(secretStrong);
+
+            const serviceTd = document.createElement("td");
+            serviceTd.textContent = item.service_name || "—";
+
+            const locationTd = document.createElement("td");
+            const locationPill = document.createElement("span");
+            locationPill.className = "result-path";
+            locationPill.textContent = item.path || "—";
+            locationTd.appendChild(locationPill);
+
+            const actionTd = document.createElement("td");
+            if (item.reveal_enabled) {
+                const openBtn = document.createElement("button");
+                openBtn.type = "button";
+                openBtn.className = "btn btn-outline-primary btn-sm";
+                openBtn.textContent = "Open";
+                openBtn.addEventListener("click", () => openSecretLocation(item));
+                actionTd.appendChild(openBtn);
+            } else {
+                const lockedBadge = document.createElement("span");
+                lockedBadge.className = "badge text-bg-secondary";
+                lockedBadge.textContent = "Reveal locked";
+                actionTd.appendChild(lockedBadge);
+            }
+
+            row.appendChild(secretTd);
+            row.appendChild(serviceTd);
+            row.appendChild(locationTd);
+            row.appendChild(actionTd);
+            resultsBody.appendChild(row);
+        });
+        resultsWrap.classList.remove("d-none");
+        const truncatedText = data.truncated ? " Showing top matches only." : "";
+        feedback.textContent = `Found ${data.count} match(es).${truncatedText}`;
+        feedback.className = "small mt-3 text-success";
+    } catch (error) {
+        console.error("Secret path search failed:", error);
+        feedback.textContent = "Search failed due to a network error.";
+        feedback.className = "small mt-3 text-danger";
+        resultsWrap.classList.add("d-none");
+    }
+}
+
+function clearSecretPathSearchResults() {
+    const feedback = document.getElementById("secret-path-search-feedback");
+    const resultsWrap = document.getElementById("secret-path-search-results-wrap");
+    const resultsBody = document.getElementById("secret-path-search-results");
+    if (feedback) {
+        feedback.textContent = "";
+        feedback.className = "small mt-3 text-muted";
+    }
+    if (resultsBody) {
+        resultsBody.innerHTML = "";
+    }
+    if (resultsWrap) {
+        resultsWrap.classList.add("d-none");
+    }
+}
+
+function handleSecretPathQueryInput(event) {
+    const value = (event?.target?.value || "").trim();
+    if (!value) {
+        clearSecretPathSearchResults();
+    }
+}
+
+function toggleExpiringSecretCustomDate() {
+    const windowSelect = document.getElementById("expiring-secret-window");
+    const windowWrap = document.getElementById("expiring-secret-window-wrap");
+    const customDateWrap = document.getElementById("expiring-secret-custom-date-wrap");
+    const customDateInput = document.getElementById("expiring-secret-custom-date");
+    if (!windowSelect || !windowWrap || !customDateWrap || !customDateInput) return;
+    const isCustom = windowSelect.value === "custom";
+    windowWrap.classList.toggle("col-md-10", !isCustom);
+    windowWrap.classList.toggle("col-md-8", isCustom);
+    customDateWrap.classList.toggle("d-none", !isCustom);
+    customDateInput.required = isCustom;
+    if (!isCustom) {
+        customDateInput.value = "";
+    }
+}
+
+function clearExpiringSecretsResults() {
+    const feedback = document.getElementById("expiring-secrets-feedback");
+    const resultsWrap = document.getElementById("expiring-secrets-results-wrap");
+    const resultsBody = document.getElementById("expiring-secrets-results");
+    if (feedback) {
+        feedback.textContent = "";
+        feedback.className = "small mt-3 text-muted";
+    }
+    if (resultsBody) {
+        resultsBody.innerHTML = "";
+    }
+    if (resultsWrap) {
+        resultsWrap.classList.add("d-none");
+    }
+}
+
+async function searchExpiringSecrets(event) {
+    event.preventDefault();
+    const windowSelect = document.getElementById("expiring-secret-window");
+    const customDateInput = document.getElementById("expiring-secret-custom-date");
+    const feedback = document.getElementById("expiring-secrets-feedback");
+    const resultsWrap = document.getElementById("expiring-secrets-results-wrap");
+    const resultsBody = document.getElementById("expiring-secrets-results");
+    if (!windowSelect || !customDateInput || !feedback || !resultsWrap || !resultsBody) return;
+
+    const windowValue = windowSelect.value || "today";
+    const customDate = customDateInput.value;
+    if (windowValue === "custom" && !customDate) {
+        feedback.textContent = "Please select a custom date.";
+        feedback.className = "small mt-3 text-danger";
+        resultsWrap.classList.add("d-none");
+        return;
+    }
+
+    feedback.textContent = "Searching…";
+    feedback.className = "small mt-3 text-muted";
+
+    try {
+        const params = new URLSearchParams({ window: windowValue });
+        if (windowValue === "custom" && customDate) {
+            params.set("custom_date", customDate);
+        }
+
+        const res = await fetch(`/secrets/search-expiring-secrets/?${params.toString()}`, {
+            headers: { "X-Requested-With": "XMLHttpRequest" },
+            credentials: "same-origin",
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            feedback.textContent = data.error || "Search failed. Please try again.";
+            feedback.className = "small mt-3 text-danger";
+            resultsWrap.classList.add("d-none");
+            return;
+        }
+
+        resultsBody.innerHTML = "";
+        if (!data.results || data.results.length === 0) {
+            feedback.textContent = `No expiring secrets found for ${data.target_date || "the selected date"}.`;
+            feedback.className = "small mt-3 text-muted";
+            resultsWrap.classList.add("d-none");
+            return;
+        }
+
+        data.results.forEach((item) => {
+            const row = document.createElement("tr");
+
+            const secretTd = document.createElement("td");
+            const secretStrong = document.createElement("strong");
+            secretStrong.textContent = item.secret_name || "—";
+            secretTd.appendChild(secretStrong);
+
+            const serviceTd = document.createElement("td");
+            serviceTd.textContent = item.service_name || "—";
+
+            const locationTd = document.createElement("td");
+            const locationPill = document.createElement("span");
+            locationPill.className = "result-path";
+            locationPill.textContent = item.path || "—";
+            locationTd.appendChild(locationPill);
+
+            const expiryTd = document.createElement("td");
+            expiryTd.textContent = item.expire_date || "—";
+
+            const actionTd = document.createElement("td");
+            const openBtn = document.createElement("button");
+            openBtn.type = "button";
+            openBtn.className = "btn btn-outline-primary btn-sm";
+            openBtn.textContent = "Open";
+            openBtn.addEventListener("click", () => openSecretLocation(item));
+            actionTd.appendChild(openBtn);
+
+            row.appendChild(secretTd);
+            row.appendChild(serviceTd);
+            row.appendChild(locationTd);
+            row.appendChild(expiryTd);
+            row.appendChild(actionTd);
+            resultsBody.appendChild(row);
+        });
+
+        resultsWrap.classList.remove("d-none");
+        const truncatedText = data.truncated ? " Showing top matches only." : "";
+        feedback.textContent = `${data.window_label || "Selected filter"}: found ${data.count} secret(s).${truncatedText}`;
+        feedback.className = "small mt-3 text-success";
+    } catch (error) {
+        console.error("Expiring secret search failed:", error);
+        feedback.textContent = "Search failed due to a network error.";
+        feedback.className = "small mt-3 text-danger";
+        resultsWrap.classList.add("d-none");
+    }
+}
+
+async function runVaultAnalysis(event) {
+    event.preventDefault();
+    const windowSelect = document.getElementById("analysis-window-hours");
+    const feedback = document.getElementById("analysis-feedback");
+    const summary = document.getElementById("analysis-summary");
+    const kpis = document.getElementById("analysis-kpis");
+    const alertsWrap = document.getElementById("analysis-alerts-wrap");
+    const alertsBody = document.getElementById("analysis-alerts-body");
+    const deliveryPlan = document.getElementById("analysis-delivery-plan");
+    const auditTrail = document.getElementById("analysis-audit-trail");
+    if (!windowSelect || !feedback || !summary || !kpis || !alertsWrap || !alertsBody || !deliveryPlan || !auditTrail) return;
+
+    feedback.textContent = "Running analysis…";
+    feedback.className = "small mt-3 text-muted";
+    summary.textContent = "";
+    kpis.textContent = "";
+    alertsBody.innerHTML = "";
+    alertsWrap.classList.add("d-none");
+    deliveryPlan.textContent = "";
+    auditTrail.textContent = "";
+
+    try {
+        const params = new URLSearchParams({ hours: windowSelect.value || "24" });
+        const res = await fetch(`/secrets/analysis/run/?${params.toString()}`, {
+            headers: { "X-Requested-With": "XMLHttpRequest" },
+            credentials: "same-origin",
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            feedback.textContent = data.error || "Analysis failed.";
+            feedback.className = "small mt-3 text-danger";
+            return;
+        }
+
+        summary.innerHTML = `<div class="alert alert-info py-2 mb-2"><strong>Incident Summary:</strong> ${data.incident_summary}</div>`;
+        feedback.textContent = `Processed ${data.event_count} audit events for the last ${data.analysis_window_hours} hour(s).`;
+        feedback.className = "small mt-3 text-success";
+
+        kpis.textContent = `Dedup groups: ${data.dedup_groups_count || 0} · Baseline deviations: ${(data.baseline_comparison || []).length} · Trend warnings: ${(data.trend_dashboard || []).length}`;
+        renderIncidentRows(data.incidents || []);
+        const channels = (data.delivery_plan || []).join(", ");
+        deliveryPlan.textContent = channels ? `Alert routing plan: ${channels}.` : "No alert routing needed for current result set.";
+        auditTrail.textContent = `Analyzer audit trail events: ${(data.audit_trail || []).length}`;
+    } catch (error) {
+        console.error("Vault analysis failed:", error);
+        feedback.textContent = "Analysis failed due to a network error.";
+        feedback.className = "small mt-3 text-danger";
+    }
+}
+
+function renderIncidentRows(incidents) {
+    const alertsWrap = document.getElementById("analysis-alerts-wrap");
+    const alertsBody = document.getElementById("analysis-alerts-body");
+    if (!alertsWrap || !alertsBody) return;
+    alertsBody.innerHTML = "";
+    if (!incidents.length) {
+        alertsWrap.classList.add("d-none");
+        return;
+    }
+    incidents.forEach((incident) => {
+        const row = document.createElement("tr");
+        row.innerHTML = `
+            <td><button type="button" class="btn btn-link btn-sm p-0 incident-open" data-id="${incident.id}">${incident.incident_key}</button></td>
+            <td>${incident.username || "—"}</td>
+            <td>${incident.action || "—"}</td>
+            <td>${incident.entity || "—"}</td>
+            <td>${incident.severity || "low"}</td>
+            <td>${incident.risk_score ?? 0}</td>
+            <td>${incident.status || "open"} / ${incident.assignee || "-"}</td>
+            <td>${incident.environment_label || "-"} / ${incident.cluster_label || "-"}</td>
+            <td>${incident.routing_status || "-"}</td>
+            <td>${incident.false_positive ? "Marked false-positive" : "-"}</td>
+        `;
+        alertsBody.appendChild(row);
+    });
+    alertsWrap.classList.remove("d-none");
+}
+
+async function applyIncidentFilters() {
+    const severity = document.getElementById("incident-filter-severity")?.value || "";
+    const status = document.getElementById("incident-filter-status")?.value || "";
+    const params = new URLSearchParams();
+    if (severity) params.set("severity", severity);
+    if (status) params.set("status", status);
+    const res = await fetch(`/secrets/analysis/incidents/?${params.toString()}`, {
+        headers: { "X-Requested-With": "XMLHttpRequest" },
+        credentials: "same-origin",
+    });
+    const data = await res.json();
+    if (!res.ok) {
+        alert(data.error || "Failed to load incidents.");
+        return;
+    }
+    renderIncidentRows(data.incidents || []);
+}
+
+function renderTimelineBars(points) {
+    if (!points?.length) return "<div class='text-muted small'>No timeline data.</div>";
+    const max = Math.max(...points.map((p) => p.count || 0), 1);
+    return points
+        .map((p) => `<div class="d-flex align-items-center mb-1"><span class="small me-2" style="width:140px;">${p.hour}</span><div style="height:10px;background:#0d6efd;width:${Math.max(5, Math.round((p.count / max) * 100))}%;border-radius:4px;"></div><span class="small ms-2">${p.count}</span></div>`)
+        .join("");
+}
+
+async function openIncidentDetail(incidentId) {
+    const res = await fetch(`/secrets/analysis/incidents/${incidentId}/`, {
+        headers: { "X-Requested-With": "XMLHttpRequest" },
+        credentials: "same-origin",
+    });
+    const data = await res.json();
+    if (!res.ok) {
+        alert(data.error || "Failed to load incident.");
+        return;
+    }
+    const card = document.getElementById("incident-detail-card");
+    if (!card) return;
+    card.classList.remove("d-none");
+
+    const incident = data.incident || {};
+    document.getElementById("incident-detail-header").textContent = `${incident.incident_key} | ${incident.severity} | score ${incident.risk_score}`;
+    document.getElementById("incident-score-breakdown").innerHTML = `<strong>Score breakdown:</strong> ${(incident.reasons || []).join(" ") || "No detailed reasons."}`;
+    document.getElementById("incident-timeline-chart").innerHTML = `<strong>Timeline:</strong>${renderTimelineBars(data.timeline || [])}`;
+    document.getElementById("incident-identity-profile").textContent = `User: ${data.identity_profile?.username || "-"} | Open incidents: ${data.identity_profile?.open_incidents || 0} | Avg risk: ${(data.identity_profile?.avg_risk || 0).toFixed(1)}`;
+    document.getElementById("incident-secret-profile").textContent = `Entity: ${data.secret_profile?.entity || "-"} | Action: ${data.secret_profile?.action || "-"} | Related incidents: ${data.secret_profile?.incident_count || 0}`;
+
+    document.getElementById("incident-workflow-id").value = incident.id || "";
+    document.getElementById("incident-workflow-status").value = incident.status || "open";
+    document.getElementById("incident-workflow-assignee").value = incident.assignee_id || "";
+    document.getElementById("incident-workflow-notes").value = incident.analyst_notes || "";
+    document.getElementById("incident-workflow-fp").checked = !!incident.false_positive;
+}
+
+async function saveIncidentWorkflow(event) {
+    event.preventDefault();
+    const incidentId = document.getElementById("incident-workflow-id")?.value;
+    if (!incidentId) return;
+    const formData = new URLSearchParams();
+    formData.set("status", document.getElementById("incident-workflow-status").value);
+    formData.set("assignee_id", document.getElementById("incident-workflow-assignee").value);
+    formData.set("analyst_notes", document.getElementById("incident-workflow-notes").value);
+    if (document.getElementById("incident-workflow-fp").checked) {
+        formData.set("false_positive", "1");
+    }
+    const res = await fetch(`/secrets/analysis/incidents/${incidentId}/update/`, {
+        method: "POST",
+        headers: {
+            "X-Requested-With": "XMLHttpRequest",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]")?.value || "",
+        },
+        body: formData.toString(),
+        credentials: "same-origin",
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+        alert(data.error || "Failed to update incident.");
+        return;
+    }
+    await applyIncidentFilters();
+    alert("Incident workflow updated.");
+}
+
+async function runVaultAnalysisQuery(event) {
+    event.preventDefault();
+    const queryInput = document.getElementById("analysis-nl-query");
+    const feedback = document.getElementById("analysis-query-feedback");
+    const wrap = document.getElementById("analysis-query-wrap");
+    const body = document.getElementById("analysis-query-body");
+    if (!queryInput || !feedback || !wrap || !body) return;
+
+    const query = queryInput.value.trim();
+    if (!query) {
+        feedback.textContent = "Please enter a query.";
+        feedback.className = "small mt-3 text-danger";
+        wrap.classList.add("d-none");
+        return;
+    }
+
+    feedback.textContent = "Running query…";
+    feedback.className = "small mt-3 text-muted";
+    body.innerHTML = "";
+    wrap.classList.add("d-none");
+    try {
+        const params = new URLSearchParams({ q: query });
+        const res = await fetch(`/secrets/analysis/query/?${params.toString()}`, {
+            headers: { "X-Requested-With": "XMLHttpRequest" },
+            credentials: "same-origin",
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            feedback.textContent = data.error || "Query failed.";
+            feedback.className = "small mt-3 text-danger";
+            return;
+        }
+
+        feedback.textContent = `${data.explanation} Returned ${data.count} row(s).`;
+        feedback.className = "small mt-3 text-success";
+        if (data.results?.length) {
+            data.results.forEach((row) => {
+                const tr = document.createElement("tr");
+                tr.innerHTML = `
+                    <td>${row.timestamp || "—"}</td>
+                    <td>${row.user || "—"}</td>
+                    <td>${row.action || "—"}</td>
+                    <td>${row.entity || "—"}</td>
+                    <td>${row.ip_address || "—"}</td>
+                `;
+                body.appendChild(tr);
+            });
+            wrap.classList.remove("d-none");
+        }
+    } catch (error) {
+        console.error("Vault analysis query failed:", error);
+        feedback.textContent = "Query failed due to a network error.";
+        feedback.className = "small mt-3 text-danger";
+    }
+}
+
+async function saveAnalysisQuery(event) {
+    event.preventDefault();
+    const name = document.getElementById("analysis-save-query-name")?.value?.trim() || "";
+    const query = document.getElementById("analysis-save-query-text")?.value?.trim() || "";
+    if (!name || !query) {
+        alert("Please provide query name and text.");
+        return;
+    }
+    const formData = new URLSearchParams({ name, query });
+    const res = await fetch("/secrets/analysis/queries/save/", {
+        method: "POST",
+        headers: {
+            "X-Requested-With": "XMLHttpRequest",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]")?.value || "",
+        },
+        body: formData.toString(),
+        credentials: "same-origin",
+    });
+    const data = await res.json();
+    if (!res.ok) {
+        alert(data.error || "Failed to save query.");
+        return;
+    }
+    document.getElementById("analysis-save-query-name").value = "";
+    loadSavedQueries();
+}
+
+async function loadSavedQueries() {
+    const target = document.getElementById("analysis-saved-query-list");
+    if (!target) return;
+    const res = await fetch("/secrets/analysis/queries/", {
+        headers: { "X-Requested-With": "XMLHttpRequest" },
+        credentials: "same-origin",
+    });
+    const data = await res.json();
+    if (!res.ok) {
+        target.textContent = data.error || "Unable to load saved queries.";
+        return;
+    }
+    if (!data.saved_queries?.length) {
+        target.textContent = "No saved queries yet.";
+        return;
+    }
+    target.innerHTML = data.saved_queries
+        .map((q) => `<button type="button" class="btn btn-link btn-sm p-0 saved-query-item" data-query="${q.query}">${q.name}</button>`)
+        .join(" · ");
 }
 
 
@@ -1356,6 +2444,38 @@ function attachSecretRegexValidation() {
 
 showSection("dashboard");
 attachSecretRegexValidation();
+document.getElementById("secret-path-search-form")?.addEventListener("submit", searchSecretPaths);
+document.getElementById("secret-path-query")?.addEventListener("input", handleSecretPathQueryInput);
+document.getElementById("expiring-secrets-form")?.addEventListener("submit", searchExpiringSecrets);
+document.getElementById("expiring-secret-window")?.addEventListener("change", () => {
+    toggleExpiringSecretCustomDate();
+    clearExpiringSecretsResults();
+});
+toggleExpiringSecretCustomDate();
+document.getElementById("analysis-run-form")?.addEventListener("submit", runVaultAnalysis);
+document.getElementById("analysis-query-form")?.addEventListener("submit", runVaultAnalysisQuery);
+document.getElementById("analysis-save-query-form")?.addEventListener("submit", saveAnalysisQuery);
+document.getElementById("incident-filter-apply")?.addEventListener("click", applyIncidentFilters);
+document.getElementById("incident-workflow-form")?.addEventListener("submit", saveIncidentWorkflow);
+document.addEventListener("click", (event) => {
+    const incidentBtn = event.target.closest(".incident-open");
+    if (incidentBtn) {
+        openIncidentDetail(incidentBtn.dataset.id);
+        return;
+    }
+    const suggestion = event.target.closest(".analysis-query-suggestion");
+    if (suggestion) {
+        const input = document.getElementById("analysis-nl-query");
+        if (input) input.value = suggestion.dataset.query || "";
+        return;
+    }
+    const savedQuery = event.target.closest(".saved-query-item");
+    if (savedQuery) {
+        const input = document.getElementById("analysis-nl-query");
+        if (input) input.value = savedQuery.dataset.query || "";
+    }
+});
+loadSavedQueries();
 </script>
 
 </body>
