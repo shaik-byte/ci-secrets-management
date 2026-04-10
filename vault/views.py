@@ -213,6 +213,9 @@ def login_view(request):
             # 3) cycle_key() protects against session fixation
             login(request, user)
             request.session.cycle_key()
+            if "vault_key" not in request.session:
+                decrypted_root_key = decrypt_root_key(vault.encrypted_root_key)
+                request.session["vault_key"] = base64.b64encode(decrypted_root_key).decode()
             request.session["auth_user"] = {
                 "id": user.id,
                 "username": user.username,
