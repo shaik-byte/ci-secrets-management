@@ -1,247 +1,35 @@
-<!-- <button onclick="registerDevice()">Register Device</button>
-
-<script>
-async function registerDevice() {
-
-    const resp = await fetch("/begin-registration/", {
-        credentials: "include"
-    });
-
-    const options = await resp.json();
-
-    // ✅ FIXED: base64url → Uint8Array
-    function base64UrlToUint8Array(base64Url) {
-        let base64 = base64Url
-            .replace(/-/g, '+')
-            .replace(/_/g, '/');
-
-        const padding = '='.repeat((4 - base64.length % 4) % 4);
-        base64 += padding;
-
-        return Uint8Array.from(atob(base64), c => c.charCodeAt(0));
-    }
-
-    options.challenge = base64UrlToUint8Array(options.challenge);
-    options.user.id = base64UrlToUint8Array(options.user.id);
-
-    const credential = await navigator.credentials.create({
-        publicKey: options
-    });
-
-    function toBase64(buffer) {
-        return btoa(String.fromCharCode(...new Uint8Array(buffer)));
-    }
-
-    const registrationData = {
-        id: credential.id,
-        rawId: toBase64(credential.rawId),
-        type: credential.type,
-        response: {
-            attestationObject: toBase64(credential.response.attestationObject),
-            clientDataJSON: toBase64(credential.response.clientDataJSON),
-        }
-    };
-
-    const finishResp = await fetch("/finish-registration/", {
-        method: "POST",
-        credentials: "include",
-        headers: {
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify(registrationData)
-    });
-
-    const result = await finishResp.json();
-
-    if (result.status === "registered") {
-        alert("Device Registered Successfully");
-        window.location.href = "/unseal/";
-    } else {
-        alert("Registration Failed: " + result.error);
-    }
-}
-</script> -->
-
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <title>Initialize Vault</title>
-
-    <!-- Bootstrap -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-
     <style>
-        body {
-            background: linear-gradient(135deg, #0f172a, #1e293b);
-            height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-family: 'Segoe UI', sans-serif;
-        }
-
-        .init-card {
-            width: 100%;
-            max-width: 450px;
-            border-radius: 16px;
-            padding: 40px;
-            background: #ffffff;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.25);
-            text-align: center;
-        }
-
-        .vault-icon {
-            font-size: 44px;
-            margin-bottom: 12px;
-        }
-
-        .btn-init {
-            border-radius: 8px;
-            padding: 10px;
-            font-weight: 600;
-        }
-
-        .status-message {
-            margin-top: 15px;
-            font-size: 14px;
-        }
-
-        .footer-text {
-            font-size: 13px;
-            margin-top: 20px;
-            color: #6c757d;
-        }
+        body { background: linear-gradient(135deg, #0f172a, #1e293b); height: 100vh; display: flex; align-items: center; justify-content: center; font-family: 'Segoe UI', sans-serif; }
+        .init-card { width: 100%; max-width: 460px; border-radius: 16px; padding: 40px; background: #fff; box-shadow: 0 20px 40px rgba(0,0,0,0.25); }
     </style>
 </head>
 <body>
-
 <div class="init-card">
+    <h3 class="mb-3 text-center">Initialize Secure Vault</h3>
+    <p class="text-muted">Choose how many Shamir shares to generate and how many are required to unseal.</p>
 
-    <div class="vault-icon">🔑</div>
-    <h3 class="mb-3">Initialize Secure Vault</h3>
-    <p class="text-muted mb-4">
-        Register <strong>{{ required_device_count }}</strong> passkeys (you can re-register an already registered device) to secure and unlock the vault.
-    </p>
+    {% if error %}
+      <div class="alert alert-danger">{{ error }}</div>
+    {% endif %}
 
-    <input id="deviceLabel"
-           type="text"
-           class="form-control mb-3"
-           maxlength="120"
-           placeholder="Device label (e.g., iPhone 15 - John)">
-
-    <button id="registerBtn"
-            onclick="registerDevice()"
-            class="btn btn-primary w-100 btn-init">
-        🔑 Register Device ({{ registered_device_count }}/{{ required_device_count }})
-    </button>
-
-    <div id="status" class="status-message">
-        {% if remaining_device_count > 0 %}
-            <div class="text-muted">{{ remaining_device_count }} more passkey registration(s) required before unsealing.</div>
-        {% else %}
-            <div class="text-success">Required devices registered. Go to Unseal.</div>
-        {% endif %}
-    </div>
-
-    <div class="footer-text">
-        Secured with WebAuthn Registration
-    </div>
-
+    <form method="post">
+        {% csrf_token %}
+        <div class="mb-3">
+            <label for="totalShares" class="form-label">Total Shares</label>
+            <input id="totalShares" name="total_shares" type="number" min="2" max="15" value="5" class="form-control" required>
+        </div>
+        <div class="mb-3">
+            <label for="threshold" class="form-label">Unseal Threshold</label>
+            <input id="threshold" name="threshold" type="number" min="2" max="15" value="3" class="form-control" required>
+        </div>
+        <button class="btn btn-primary w-100" type="submit">Generate Shares</button>
+    </form>
 </div>
-
-
-<script>
-async function registerDevice() {
-
-    const statusDiv = document.getElementById("status");
-    const btn = document.getElementById("registerBtn");
-
-    try {
-
-        btn.disabled = true;
-        btn.innerText = "Registering...";
-        statusDiv.innerHTML = '<div class="text-muted">Waiting for passkey confirmation...</div>';
-
-        const resp = await fetch("/begin-registration/", {
-            credentials: "include"
-        });
-
-        const options = await resp.json();
-
-        function base64UrlToUint8Array(base64Url) {
-            let base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-            const padding = '='.repeat((4 - base64.length % 4) % 4);
-            base64 += padding;
-            return Uint8Array.from(atob(base64), c => c.charCodeAt(0));
-        }
-
-        options.challenge = base64UrlToUint8Array(options.challenge);
-        options.user.id = base64UrlToUint8Array(options.user.id);
-
-        const credential = await navigator.credentials.create({
-            publicKey: options
-        });
-
-        function toBase64(buffer) {
-            return btoa(String.fromCharCode(...new Uint8Array(buffer)));
-        }
-
-        const registrationData = {
-            id: credential.id,
-            rawId: toBase64(credential.rawId),
-            type: credential.type,
-            deviceLabel: document.getElementById("deviceLabel").value || "",
-            response: {
-                attestationObject: toBase64(credential.response.attestationObject),
-                clientDataJSON: toBase64(credential.response.clientDataJSON),
-            }
-        };
-
-        const finishResp = await fetch("/finish-registration/", {
-            method: "POST",
-            credentials: "include",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify(registrationData)
-        });
-
-        const result = await finishResp.json();
-
-        if (result.status === "registered") {
-            if (result.ready_for_unseal) {
-                statusDiv.innerHTML =
-                    `<div class="text-success">${result.re_registered ? "Device Re-Registered" : "Device Registered"} (${result.registered_devices}/${result.required_devices}) ✔ Redirecting to unseal...</div>`;
-
-                setTimeout(() => {
-                    window.location.href = "/unseal/";
-                }, 1000);
-            } else {
-                statusDiv.innerHTML =
-                    `<div class="text-warning">${result.re_registered ? "Device Re-Registered" : "Device Registered"} (${result.registered_devices}/${result.required_devices}). Please register another mobile device.</div>`;
-
-                setTimeout(() => {
-                    window.location.reload();
-                }, 1200);
-            }
-        } else {
-            throw new Error(result.error);
-        }
-
-    } catch (error) {
-
-        btn.disabled = false;
-        btn.innerText = "🔑 Register Device";
-
-        statusDiv.innerHTML =
-            '<div class="alert alert-danger mt-3">Registration Failed: ' +
-            error.message +
-            '</div>';
-    }
-}
-</script>
-
 </body>
 </html>

@@ -1,13 +1,25 @@
-<h2>Save These Unseal Keys</h2>
-
-<p>You need 3 of these 5 keys to unseal.</p>
-
-<ul>
-{% for share in shares %}
-    <li>{{ share }}</li>
-{% endfor %}
-</ul>
-
-<p><b>Save them securely. They will not be shown again.</b></p>
-
-<a href="/unseal/">Go to Unseal</a>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Save Unseal Shares</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+<div class="container py-5">
+    <div class="card shadow-sm">
+        <div class="card-body">
+            <h3 class="card-title">Save These Unseal Shares</h3>
+            <p>You need <strong>{{ threshold }}</strong> of <strong>{{ total_shares }}</strong> shares to unseal the vault.</p>
+            <div class="alert alert-warning">Store these shares securely. They are only shown once.</div>
+            <ul class="list-group mb-3">
+                {% for share in shares %}
+                    <li class="list-group-item"><code>{{ share }}</code></li>
+                {% endfor %}
+            </ul>
+            <a class="btn btn-primary" href="/unseal/">Continue to Unseal</a>
+        </div>
+    </div>
+</div>
+</body>
+</html>
