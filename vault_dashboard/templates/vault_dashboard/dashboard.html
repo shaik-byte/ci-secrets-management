@@ -1863,15 +1863,54 @@ async function copySecret(id) {
             return;
         }
 
-        if (!navigator.clipboard?.writeText) {
-            alert("Clipboard access is not supported in this browser.");
+        const secretValue = data.secret || "";
+        let copied = false;
+
+        if (navigator.clipboard?.writeText && window.isSecureContext) {
+            try {
+                await navigator.clipboard.writeText(secretValue);
+                copied = true;
+            } catch (clipboardError) {
+                console.warn("Navigator clipboard copy failed, trying fallback.", clipboardError);
+            }
+        }
+
+        if (!copied) {
+            copied = legacyCopyText(secretValue);
+        }
+
+        if (!copied) {
+            alert("Unable to access clipboard. Please copy manually.");
             return;
         }
-        await navigator.clipboard.writeText(data.secret || "");
+
         alert("Secret copied to clipboard.");
     } catch (error) {
         console.error("Copy secret failed:", error);
         alert("Unable to copy secret. Please try again.");
+    }
+}
+
+function legacyCopyText(value) {
+    try {
+        const temp = document.createElement("textarea");
+        temp.value = value || "";
+        temp.setAttribute("readonly", "");
+        temp.style.position = "fixed";
+        temp.style.opacity = "0";
+        temp.style.pointerEvents = "none";
+
+        document.body.appendChild(temp);
+        temp.focus();
+        temp.select();
+        temp.setSelectionRange(0, temp.value.length);
+
+        const successful = document.execCommand("copy");
+        document.body.removeChild(temp);
+        return successful;
+    } catch (fallbackError) {
+        console.error("Fallback copy failed:", fallbackError);
+        return false;
     }
 }
 
