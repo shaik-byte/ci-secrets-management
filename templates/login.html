@@ -1,119 +1,104 @@
-<!-- <h2>Login</h2>
-
-{% if error %}
-<p style="color:red">{{ error }}</p>
-{% endif %}
-
-<form method="POST">
-    {% csrf_token %}
-    <input type="text" name="username" placeholder="Username" required><br><br>
-    <input type="password" name="password" placeholder="Password" required><br><br>
-    <button type="submit">Login</button>
-</form> -->
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <title>Vault Login</title>
-
-    <!-- Bootstrap -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-
     <style>
-        body {
-            background: linear-gradient(135deg, #1f2937, #111827);
-            height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-family: 'Segoe UI', sans-serif;
-        }
-
-        .login-card {
-            width: 100%;
-            max-width: 420px;
-            border-radius: 16px;
-            padding: 40px;
-            background: #ffffff;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.25);
-        }
-
-        .login-title {
-            font-weight: 700;
-            text-align: center;
-            margin-bottom: 30px;
-        }
-
-        .form-control {
-            border-radius: 8px;
-            padding: 10px 14px;
-        }
-
-        .btn-primary {
-            border-radius: 8px;
-            padding: 10px;
-            font-weight: 600;
-        }
-
-        .vault-icon {
-            font-size: 40px;
-            text-align: center;
-            margin-bottom: 10px;
-        }
-
-        .footer-text {
-            font-size: 13px;
-            text-align: center;
-            margin-top: 20px;
-            color: #6c757d;
-        }
+        body { background: linear-gradient(135deg, #1f2937, #111827); height: 100vh; display: flex; align-items: center; justify-content: center; font-family: 'Segoe UI', sans-serif; }
+        .login-card { width: 100%; max-width: 480px; border-radius: 16px; padding: 34px; background: #ffffff; box-shadow: 0 20px 40px rgba(0,0,0,0.25); }
+        .login-title { font-weight: 700; text-align: center; margin-bottom: 22px; }
+        .form-control, .form-select { border-radius: 8px; padding: 10px 14px; }
+        .btn-primary { border-radius: 8px; padding: 10px; font-weight: 600; }
+        .vault-icon { font-size: 40px; text-align: center; margin-bottom: 8px; }
+        .footer-text { font-size: 13px; text-align: center; margin-top: 18px; color: #6c757d; }
+        .oauth-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+        .auth-method-panel { display: none; }
+        .auth-method-panel.active { display: block; }
     </style>
 </head>
 <body>
-
 <div class="login-card">
-
     <div class="vault-icon">🔐</div>
     <h3 class="login-title">Secure Vault Login</h3>
 
     {% if error %}
-    <div class="alert alert-danger text-center">
-        {{ error }}
-    </div>
+    <div class="alert alert-danger text-center">{{ error }}</div>
     {% endif %}
 
-    <form method="POST">
+    <form method="POST" id="vault-login-form">
         {% csrf_token %}
 
         <div class="mb-3">
-            <label class="form-label">Username</label>
-            <input type="text"
-                   name="username"
-                   class="form-control"
-                   placeholder="Enter username"
-                   required>
+            <label class="form-label">Login Method</label>
+            <select name="login_method" id="login-method" class="form-select">
+                <option value="username_password">Username / Password</option>
+                <option value="approle">AppRole</option>
+                <option value="github">GitHub</option>
+                <option value="google">Google</option>
+            </select>
         </div>
 
-        <div class="mb-4">
-            <label class="form-label">Password</label>
-            <input type="password"
-                   name="password"
-                   class="form-control"
-                   placeholder="Enter password"
-                   required>
+        <div id="panel-username_password" class="auth-method-panel active">
+            <div class="mb-3">
+                <label class="form-label">Username</label>
+                <input type="text" name="username" class="form-control" placeholder="Enter username">
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Password</label>
+                <input type="password" name="password" class="form-control" placeholder="Enter password">
+            </div>
         </div>
 
-        <button type="submit" class="btn btn-primary w-100">
-            Login
-        </button>
+        <div id="panel-approle" class="auth-method-panel">
+            <div class="mb-3">
+                <label class="form-label">Role ID</label>
+                <input type="text" name="role_id" class="form-control" placeholder="Enter AppRole Role ID">
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Secret ID</label>
+                <input type="password" name="secret_id" class="form-control" placeholder="Enter AppRole Secret ID">
+            </div>
+        </div>
+
+        <div id="panel-github" class="auth-method-panel">
+            <p class="small text-muted">Continue with GitHub OAuth. You will be redirected to GitHub for authentication.</p>
+            <div class="oauth-grid mb-3">
+                <a href="{% url 'oauth_login_start' 'github' %}" class="btn btn-outline-dark">Continue with GitHub</a>
+            </div>
+        </div>
+
+        <div id="panel-google" class="auth-method-panel">
+            <p class="small text-muted">Continue with Google OAuth. You will be redirected to Google for authentication.</p>
+            <div class="oauth-grid mb-3">
+                <a href="{% url 'oauth_login_start' 'google' %}" class="btn btn-outline-danger">Continue with Google</a>
+            </div>
+        </div>
+
+        <button type="submit" id="login-submit" class="btn btn-primary w-100">Login</button>
     </form>
 
-    <div class="footer-text">
-        Protected by Shamir Unseal + Encryption
-    </div>
-
+    <div class="footer-text">Protected by Shamir Unseal + Encryption</div>
 </div>
 
+<script>
+    const methodSelect = document.getElementById('login-method');
+    const submitButton = document.getElementById('login-submit');
+    const panels = document.querySelectorAll('.auth-method-panel');
+    const form = document.getElementById('vault-login-form');
+
+    function syncMethodUI() {
+        const selected = methodSelect.value;
+        panels.forEach((panel) => {
+            panel.classList.toggle('active', panel.id === `panel-${selected}`);
+        });
+        const isCredentialMethod = selected === 'username_password' || selected === 'approle';
+        submitButton.style.display = isCredentialMethod ? 'block' : 'none';
+        form.action = '';
+    }
+
+    methodSelect.addEventListener('change', syncMethodUI);
+    syncMethodUI();
+</script>
 </body>
 </html>

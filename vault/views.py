@@ -2,21 +2,66 @@ import base64
 import hmac
 import logging
 import os
+import secrets
+import hashlib
+from urllib.parse import urlencode
 
 from Crypto.Protocol.SecretSharing import Shamir
 from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth.models import User
 from django.contrib.auth.decorators import login_required
 from django.core.cache import cache
 from django.db import connections
 from django.http import HttpResponseForbidden
 from django.shortcuts import redirect, render
+from django.urls import reverse
 from django.views.decorators.http import require_POST
+import requests
 
 from .crypto_utils import decrypt_root_key, encrypt_root_key
 from .models import VaultConfig
 from .security import get_client_ip, get_location_from_ip
+from vault_dashboard.models import AppRole
 
 logger = logging.getLogger(__name__)
+SUPPORTED_LOGIN_METHODS = ("username_password", "approle", "github", "google")
+
+
+def _complete_login(request, user, vault):
+    login(request, user)
+    request.session.cycle_key()
+    if "vault_key" not in request.session:
+        decrypted_root_key = decrypt_root_key(vault.encrypted_root_key)
+        request.session["vault_key"] = base64.b64encode(decrypted_root_key).decode()
+    request.session["auth_user"] = {
+        "id": user.id,
+        "username": user.username,
+        "is_superuser": user.is_superuser,
+    }
+    return redirect("vault_dashboard")
+
+
+def _get_oauth_provider_settings(request, provider_name):
+    if provider_name == "github":
+        return {
+            "client_id": os.getenv("GITHUB_OAUTH_CLIENT_ID", "").strip(),
+            "client_secret": os.getenv("GITHUB_OAUTH_CLIENT_SECRET", "").strip(),
+            "authorize_url": "https://github.com/login/oauth/authorize",
+            "token_url": "https://github.com/login/oauth/access_token",
+            "userinfo_url": "https://api.github.com/user",
+            "email_url": "https://api.github.com/user/emails",
+            "scope": "read:user user:email",
+        }
+    if provider_name == "google":
+        return {
+            "client_id": os.getenv("GOOGLE_OAUTH_CLIENT_ID", "").strip(),
+            "client_secret": os.getenv("GOOGLE_OAUTH_CLIENT_SECRET", "").strip(),
+            "authorize_url": "https://accounts.google.com/o/oauth2/v2/auth",
+            "token_url": "https://oauth2.googleapis.com/token",
+            "userinfo_url": "https://openidconnect.googleapis.com/v1/userinfo",
+            "scope": "openid email profile",
+        }
+    return None
 
 
 def format_share(index: int, share_bytes: bytes) -> str:
@@ -201,31 +246,143 @@ def login_view(request):
         return render(request, "sealed.html")
 
     if request.method == "POST":
-        username = request.POST.get("username")
-        password = request.POST.get("password")
+        login_method = (request.POST.get("login_method") or "username_password").strip()
 
-        user = authenticate(request, username=username, password=password)
+        if login_method not in SUPPORTED_LOGIN_METHODS:
+            return render(request, "login.html", {"error": "Unsupported login method selected."})
 
-        if user:
-            # Session creation point:
-            # 1) authenticate credentials
-            # 2) login() binds authenticated user to server-side session
-            # 3) cycle_key() protects against session fixation
-            login(request, user)
-            request.session.cycle_key()
-            if "vault_key" not in request.session:
-                decrypted_root_key = decrypt_root_key(vault.encrypted_root_key)
-                request.session["vault_key"] = base64.b64encode(decrypted_root_key).decode()
-            request.session["auth_user"] = {
-                "id": user.id,
-                "username": user.username,
-                "is_superuser": user.is_superuser,
-            }
-            return redirect("vault_dashboard")
+        if login_method == "username_password":
+            username = request.POST.get("username")
+            password = request.POST.get("password")
+            user = authenticate(request, username=username, password=password)
+            if user:
+                return _complete_login(request, user, vault)
+            return render(request, "login.html", {"error": "Invalid username or password."})
 
-        return render(request, "login.html", {"error": "Invalid credentials"})
+        if login_method == "approle":
+            role_id = (request.POST.get("role_id") or "").strip()
+            secret_id = (request.POST.get("secret_id") or "").strip()
+            approle = AppRole.objects.select_related("machine_policy__created_by").filter(role_id=role_id, is_active=True).first()
+            if not approle:
+                return render(request, "login.html", {"error": "Invalid Role ID."})
+            if hashlib.sha256(secret_id.encode()).hexdigest() != approle.secret_id_hash:
+                return render(request, "login.html", {"error": "Invalid Secret ID."})
+            user = approle.machine_policy.created_by
+            if not user or not user.is_active:
+                return render(request, "login.html", {"error": "AppRole is not linked to an active user."})
+            return _complete_login(request, user, vault)
 
-    return render(request, "login.html")
+    return render(request, "login.html", {"oauth_enabled": True})
+
+
+def oauth_login_start(request, provider):
+    vault = VaultConfig.objects.first()
+    if not vault or vault.is_sealed:
+        return render(request, "sealed.html")
+
+    settings = _get_oauth_provider_settings(request, provider)
+    if not settings:
+        return render(request, "login.html", {"error": "Unsupported OAuth provider."})
+    if not settings["client_id"] or not settings["client_secret"]:
+        return render(request, "login.html", {"error": f"{provider.title()} OAuth is not configured on server."})
+
+    state = secrets.token_urlsafe(24)
+    request.session[f"{provider}_oauth_state"] = state
+    callback_url = request.build_absolute_uri(reverse("oauth_login_callback", kwargs={"provider": provider}))
+
+    if provider == "google":
+        params = {
+            "client_id": settings["client_id"],
+            "redirect_uri": callback_url,
+            "response_type": "code",
+            "scope": settings["scope"],
+            "state": state,
+            "access_type": "online",
+            "prompt": "select_account",
+        }
+    else:
+        params = {
+            "client_id": settings["client_id"],
+            "redirect_uri": callback_url,
+            "scope": settings["scope"],
+            "state": state,
+        }
+    return redirect(f"{settings['authorize_url']}?{urlencode(params)}")
+
+
+def oauth_login_callback(request, provider):
+    vault = VaultConfig.objects.first()
+    if not vault or vault.is_sealed:
+        return render(request, "sealed.html")
+
+    settings = _get_oauth_provider_settings(request, provider)
+    if not settings:
+        return render(request, "login.html", {"error": "Unsupported OAuth provider."})
+
+    expected_state = request.session.pop(f"{provider}_oauth_state", None)
+    if not expected_state or expected_state != request.GET.get("state"):
+        return render(request, "login.html", {"error": "OAuth state validation failed. Please retry."})
+
+    code = request.GET.get("code")
+    if not code:
+        return render(request, "login.html", {"error": "Authorization code missing from OAuth callback."})
+
+    callback_url = request.build_absolute_uri(reverse("oauth_login_callback", kwargs={"provider": provider}))
+    token_payload = {
+        "client_id": settings["client_id"],
+        "client_secret": settings["client_secret"],
+        "code": code,
+        "redirect_uri": callback_url,
+    }
+    if provider == "google":
+        token_payload["grant_type"] = "authorization_code"
+
+    token_headers = {"Accept": "application/json"}
+    token_response = requests.post(settings["token_url"], data=token_payload, headers=token_headers, timeout=20)
+    if token_response.status_code >= 400:
+        return render(request, "login.html", {"error": f"{provider.title()} token exchange failed."})
+    token_data = token_response.json()
+    access_token = token_data.get("access_token")
+    if not access_token:
+        return render(request, "login.html", {"error": f"{provider.title()} access token missing."})
+
+    user_headers = {"Authorization": f"Bearer {access_token}", "Accept": "application/json"}
+    profile_response = requests.get(settings["userinfo_url"], headers=user_headers, timeout=20)
+    if profile_response.status_code >= 400:
+        return render(request, "login.html", {"error": f"Unable to fetch {provider.title()} profile."})
+    profile = profile_response.json()
+
+    email = profile.get("email")
+    full_name = profile.get("name") or ""
+    external_id = str(profile.get("id") or "")
+
+    if provider == "github" and not email:
+        email_response = requests.get(settings["email_url"], headers=user_headers, timeout=20)
+        if email_response.status_code < 400:
+            for row in email_response.json():
+                if row.get("primary") or row.get("verified"):
+                    email = row.get("email")
+                    break
+
+    if not email:
+        return render(request, "login.html", {"error": f"{provider.title()} account did not provide an email."})
+
+    user = User.objects.filter(email__iexact=email).first()
+    if not user:
+        safe_username = f"{provider}_{external_id or email.split('@')[0]}".lower().replace(" ", "_")
+        base_username = safe_username[:140]
+        candidate = base_username
+        suffix = 1
+        while User.objects.filter(username=candidate).exists():
+            candidate = f"{base_username[:130]}_{suffix}"
+            suffix += 1
+        user = User.objects.create(username=candidate, email=email, first_name=full_name[:150])
+        user.set_unusable_password()
+        user.save()
+
+    if not user.is_active:
+        return render(request, "login.html", {"error": "This account is inactive."})
+    return _complete_login(request, user, vault)
 
 
 @login_required
