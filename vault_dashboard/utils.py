@@ -1,4 +1,5 @@
 import base64
+import hashlib
 from cryptography.fernet import Fernet
 
 
@@ -9,7 +10,16 @@ def get_fernet_from_session(request):
         raise Exception("Vault is sealed")
 
     key = base64.b64decode(key_b64)
-    return Fernet(base64.urlsafe_b64encode(key[:32]))
+
+    # Backward compatibility:
+    # - Older sessions used 32-byte root keys directly (first 32 bytes).
+    # - Newer setups may use 16-byte root keys; derive a stable 32-byte key.
+    if len(key) >= 32:
+        fernet_material = key[:32]
+    else:
+        fernet_material = hashlib.sha256(key).digest()
+
+    return Fernet(base64.urlsafe_b64encode(fernet_material))
 
 
 def encrypt_value(request, value):
