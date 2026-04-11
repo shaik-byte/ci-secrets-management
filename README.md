@@ -381,3 +381,7 @@ Response includes:
 - `expires_in` / `expires_at`
 - resolved `machine_policy`
 - effective access scope (`read/write/delete`)
+
+## UI Modernization Plan
+
+- End-to-end HashiCorp-style Vault UI implementation plan: `docs/hashicorp-style-vault-ui-e2e-plan.md`

@@ -1,9 +1,11 @@
+{% load static %}
 <!DOCTYPE html>
 <html>
 <head>
     <title>Secrets Manager</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="{% static 'vault_dashboard/dashboard-modern.css' %}" rel="stylesheet">
 
     <style>
         body {
@@ -236,9 +238,12 @@
 
 <div class="app-shell">
     <aside class="sidebar">
-        <div class="sidebar-title">Dashboard</div>
+        <div class="sidebar-title">
+            <div class="small text-uppercase text-secondary">CI Vault</div>
+            <div>Operations Console</div>
+        </div>
         <button id="nav-dashboard" class="sidebar-item active" type="button" onclick="showSection('dashboard')">
-            Dashboard
+            Overview
         </button>
         {% if can_view_secrets %}
         <button id="nav-secrets" class="sidebar-item" type="button" onclick="showSection('secrets')">
@@ -275,7 +280,7 @@
     <main class="content-area">
 <div class="container mt-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2 id="page-title">Dashboard</h2>
+        <h2 id="page-title">Overview</h2>
 
         <div class="d-flex align-items-center gap-3">
             <span class="badge rounded-pill text-bg-light" title="Logged in user">
@@ -314,6 +319,53 @@
         {% endfor %}
     </div>
     {% endif %}
+
+    <div class="hashi-hero card p-4 mb-4">
+        <div class="d-flex flex-wrap justify-content-between gap-3 align-items-center">
+            <div>
+                <h5 class="mb-1">Vault Workspace</h5>
+                <p class="text-muted mb-0">Manage secrets, access policies, and machine identities from one console.</p>
+            </div>
+            <div class="d-flex gap-2 flex-wrap">
+                {% if can_view_secrets %}
+                <button class="btn btn-primary btn-sm" type="button" onclick="showSection('secrets')">Open Secrets</button>
+                {% endif %}
+                {% if can_view_policy %}
+                <button class="btn btn-outline-primary btn-sm" type="button" onclick="showSection('policy')">Open Policies</button>
+                {% endif %}
+                {% if can_view_approvals %}
+                <button class="btn btn-outline-warning btn-sm" type="button" onclick="showSection('approvals')">Review Approvals</button>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-md-3 col-sm-6">
+            <div class="card stat-card p-3">
+                <div class="small text-muted">Environments</div>
+                <div class="h3 mb-0">{{ dashboard_stats.environments }}</div>
+            </div>
+        </div>
+        <div class="col-md-3 col-sm-6">
+            <div class="card stat-card p-3">
+                <div class="small text-muted">Folders</div>
+                <div class="h3 mb-0">{{ dashboard_stats.folders }}</div>
+            </div>
+        </div>
+        <div class="col-md-3 col-sm-6">
+            <div class="card stat-card p-3">
+                <div class="small text-muted">Secrets</div>
+                <div class="h3 mb-0">{{ dashboard_stats.secrets }}</div>
+            </div>
+        </div>
+        <div class="col-md-3 col-sm-6">
+            <div class="card stat-card p-3">
+                <div class="small text-muted">Pending Approvals</div>
+                <div class="h3 mb-0">{{ dashboard_stats.pending_approvals }}</div>
+            </div>
+        </div>
+    </div>
 
     <div id="welcome-panel" class="card p-4 mb-4 shadow-sm text-center">
         <h5 class="mb-2">Choose a module from the sidebar</h5>

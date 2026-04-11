@@ -331,6 +331,21 @@ def dashboard(request):
             "extra_count": max(len(readable) - 15, 0),
         })
 
+    environment_ids = list(environments.values_list("id", flat=True))
+    folder_count = Folder.objects.filter(environment_id__in=environment_ids).count()
+    secret_count = Secret.objects.filter(folder__environment_id__in=environment_ids).count()
+    pending_approval_count = (
+        DeletionApprovalRequest.objects.filter(status="pending").count()
+        if "approvals" in visible_feature_keys
+        else 0
+    )
+    dashboard_stats = {
+        "environments": len(environment_ids),
+        "folders": folder_count,
+        "secrets": secret_count,
+        "pending_approvals": pending_approval_count,
+    }
+
     return render(request, "vault_dashboard/dashboard.html", {
         "environments": environments,
         "secret_policy": policy,
@@ -359,6 +374,7 @@ def dashboard(request):
         "can_view_analysis": "analysis" in visible_feature_keys,
         "feature_rows": feature_rows,
         "setting_environments": _manageable_environments_for_settings(request.user).order_by("name"),
+        "dashboard_stats": dashboard_stats,
     })
 
 
