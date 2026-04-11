@@ -1,4 +1,6 @@
 import smtplib
+import json
+from urllib import error, request
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -8,11 +10,11 @@ from .models import EmailConfig
 def send_expiry_email(user, secret):
     config = EmailConfig.objects.filter(created_by=user).first()
     if not config:
-        return
+        return False
 
     app_password = config.get_app_password()
     if not app_password:
-        return
+        return False
 
     msg = MIMEMultipart()
     msg['From'] = config.from_email
@@ -46,3 +48,34 @@ def send_expiry_email(user, secret):
     server.login(config.from_email, app_password)
     server.sendmail(config.from_email, recipients, msg.as_string())
     server.quit()
+    return True
+
+
+def send_expiry_google_chat_message(user, secret):
+    config = EmailConfig.objects.filter(created_by=user).first()
+    if not config or not config.has_google_chat_webhook:
+        return False
+
+    webhook_url = config.get_google_chat_webhook()
+    payload = {
+        "text": (
+            "🚨 *Secret Expiry Alert* 🚨\n"
+            f"Environment: {secret.folder.environment.name}\n"
+            f"Folder: {secret.folder.name}\n"
+            f"Secret: {secret.name}\n"
+            f"Expiry Date: {secret.expire_date}\n"
+            "Please rotate or update it immediately."
+        )
+    }
+
+    req = request.Request(
+        webhook_url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json; charset=UTF-8"},
+        method="POST",
+    )
+    try:
+        request.urlopen(req, timeout=10)
+    except error.URLError as exc:
+        raise RuntimeError(f"Google Chat notification failed: {exc}") from exc
+    return True

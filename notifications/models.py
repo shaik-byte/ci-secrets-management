@@ -14,6 +14,7 @@ class EmailConfig(models.Model):
     bcc_email = models.TextField(blank=True, null=True)
 
     app_password_encrypted = models.BinaryField(null=True, blank=True)
+    google_chat_webhook_encrypted = models.BinaryField(null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -23,9 +24,19 @@ class EmailConfig(models.Model):
     def get_app_password(self) -> str:
         return decrypt_notification_secret(self.app_password_encrypted)
 
+    def set_google_chat_webhook(self, webhook_url: str) -> None:
+        self.google_chat_webhook_encrypted = encrypt_notification_secret(webhook_url)
+
+    def get_google_chat_webhook(self) -> str:
+        return decrypt_notification_secret(self.google_chat_webhook_encrypted)
+
     @property
     def has_app_password(self) -> bool:
         return bool(self.app_password_encrypted)
+
+    @property
+    def has_google_chat_webhook(self) -> bool:
+        return bool(self.google_chat_webhook_encrypted)
 
     def __str__(self):
         return f"Email Config - {self.created_by.username}"

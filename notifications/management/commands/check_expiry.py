@@ -2,7 +2,7 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 from datetime import timedelta
 from vault_dashboard.models import Secret
-from notifications.utils import send_expiry_email
+from notifications.utils import send_expiry_email, send_expiry_google_chat_message
 
 
 class Command(BaseCommand):
@@ -27,13 +27,25 @@ class Command(BaseCommand):
             user = secret.folder.environment.created_by
 
             try:
-                send_expiry_email(user, secret)
-                secret.notified = True
-                secret.save()
+                email_sent = send_expiry_email(user, secret)
+                chat_sent = send_expiry_google_chat_message(user, secret)
 
-                self.stdout.write(
-                    self.style.SUCCESS(f"Notification sent for: {secret.name}")
-                )
+                if email_sent or chat_sent:
+                    secret.notified = True
+                    secret.save()
+
+                    self.stdout.write(
+                        self.style.SUCCESS(
+                            f"Notification sent for: {secret.name} "
+                            f"(email={'yes' if email_sent else 'no'}, chat={'yes' if chat_sent else 'no'})"
+                        )
+                    )
+                else:
+                    self.stdout.write(
+                        self.style.WARNING(
+                            f"No notification channels configured for: {secret.name}"
+                        )
+                    )
 
             except Exception as e:
                 self.stdout.write(
