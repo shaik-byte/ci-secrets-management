@@ -19,6 +19,8 @@ def notification_dashboard(request):
             "config": config,
             "has_app_password": bool(config and config.has_app_password),
             "has_google_chat_webhook": bool(config and config.has_google_chat_webhook),
+            "has_microsoft_teams_webhook": bool(config and config.has_microsoft_teams_webhook),
+            "has_slack_webhook": bool(config and config.has_slack_webhook),
         },
     )
 
@@ -43,6 +45,16 @@ def save_notification_config(request):
         submitted_google_chat_webhook = (request.POST.get("google_chat_webhook") or "").strip()
         if submitted_google_chat_webhook:
             config.set_google_chat_webhook(submitted_google_chat_webhook)
+
+        submitted_microsoft_teams_webhook = (request.POST.get("microsoft_teams_webhook") or "").strip()
+        if submitted_microsoft_teams_webhook:
+            config.set_microsoft_teams_webhook(submitted_microsoft_teams_webhook)
+        config.microsoft_teams_channel = (request.POST.get("microsoft_teams_channel") or "").strip()
+
+        submitted_slack_webhook = (request.POST.get("slack_webhook") or "").strip()
+        if submitted_slack_webhook:
+            config.set_slack_webhook(submitted_slack_webhook)
+        config.slack_channel = (request.POST.get("slack_channel") or "").strip()
 
         config.save()
 

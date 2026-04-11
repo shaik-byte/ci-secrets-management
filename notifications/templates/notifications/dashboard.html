@@ -14,176 +14,173 @@
             --accent: #2563eb;
             --accent-soft: #dbeafe;
             --border: #e2e8f0;
+            --nav-bg: #eef2f7;
         }
-
-        body {
-            background: radial-gradient(circle at top right, #eef4ff 0, var(--bg) 40%);
-            color: var(--text-main);
-            min-height: 100vh;
+        body { background: radial-gradient(circle at top right, #eef4ff 0, var(--bg) 40%); color: var(--text-main); }
+        .page-shell { max-width: 1200px; margin: 2rem auto; }
+        .layout-grid { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 1rem; }
+        .left-nav { background: var(--nav-bg); border-radius: 12px; padding: 1rem 0.5rem; border: 1px solid var(--border); height: fit-content; }
+        .left-nav button {
+            width: 100%; text-align: left; border: 0; background: transparent; color: #0f172a;
+            padding: 0.65rem 0.75rem; border-radius: 8px; font-weight: 600; margin-bottom: 0.35rem;
         }
-
-        .page-shell {
-            max-width: 920px;
-            margin: 3rem auto;
-        }
-
-        .settings-card {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 18px;
-            box-shadow: 0 12px 34px rgba(15, 23, 42, 0.08);
-            overflow: hidden;
-        }
-
-        .settings-header {
-            background: linear-gradient(135deg, #1d4ed8, #2563eb);
-            color: #fff;
-            padding: 1.6rem 1.8rem;
-        }
-
-        .settings-subtitle {
-            font-size: 0.95rem;
-            opacity: 0.92;
-            margin-bottom: 0;
-        }
-
-        .section-title {
-            font-size: 1.06rem;
-            font-weight: 700;
-            margin-bottom: 0.9rem;
-        }
-
-        .section-chip {
-            display: inline-block;
-            background: var(--accent-soft);
-            color: #1d4ed8;
-            font-size: 0.75rem;
-            font-weight: 600;
-            padding: 0.3rem 0.6rem;
-            border-radius: 999px;
-            margin-bottom: 0.75rem;
-        }
-
-        .form-label {
-            font-weight: 600;
-            color: var(--text-main);
-            margin-bottom: 0.4rem;
-        }
-
-        .form-control {
-            border: 1px solid var(--border);
-            border-radius: 10px;
-            padding: 0.65rem 0.8rem;
-        }
-
-        .form-control:focus {
-            border-color: #93c5fd;
-            box-shadow: 0 0 0 0.2rem rgba(37, 99, 235, 0.14);
-        }
-
-        .section-card {
-            border: 1px solid var(--border);
-            border-radius: 14px;
-            padding: 1rem 1rem 0.4rem;
-            background: #fff;
-        }
-
-        .muted {
-            color: var(--text-muted);
-        }
-
-        .btn-save {
-            border-radius: 10px;
-            font-weight: 600;
-            padding: 0.75rem 1rem;
-        }
+        .left-nav button.active, .left-nav button:hover { background: var(--accent-soft); color: #1d4ed8; }
+        .settings-card { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; box-shadow: 0 12px 34px rgba(15,23,42,0.08); overflow: hidden; }
+        .settings-header { background: linear-gradient(135deg, #1d4ed8, #2563eb); color: #fff; padding: 1.2rem 1.5rem; }
+        .settings-subtitle { font-size: 0.95rem; opacity: 0.92; margin-bottom: 0; }
+        .integration-panel { border: 1px solid var(--border); border-radius: 14px; padding: 1rem; margin-bottom: 1rem; background: #fff; }
+        .integration-panel[hidden] { display: none !important; }
+        .integration-title { font-size: 1.06rem; font-weight: 700; margin-bottom: 0.2rem; }
+        .integration-meta { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 0.8rem; }
+        .integration-help { background: #f8fafc; border: 1px solid var(--border); border-radius: 10px; padding: 0.7rem 0.9rem; margin-bottom: 1rem; }
+        .integration-help ul { margin-bottom: 0; }
+        .form-label { font-weight: 600; margin-bottom: 0.4rem; }
+        .form-control { border: 1px solid var(--border); border-radius: 10px; padding: 0.65rem 0.8rem; }
     </style>
 </head>
 <body>
-    <div class="container page-shell">
-        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-            <div>
-                <h2 class="mb-1 fw-bold">Notification Settings</h2>
-                <p class="settings-subtitle muted">Manage email recipients and Google Chat integration for expiry alerts.</p>
-            </div>
-            <a href="/" class="btn btn-outline-secondary btn-sm">Back to Dashboard</a>
+<div class="container page-shell">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <div>
+            <h2 class="mb-1 fw-bold">Notification Settings</h2>
+            <p class="settings-subtitle text-muted">Manage Email, Teams, Slack, and Chat integrations for vault expiry alerts.</p>
         </div>
+        <a href="/" class="btn btn-outline-secondary btn-sm">Back to Dashboard</a>
+    </div>
+
+    <div class="layout-grid">
+        <aside class="left-nav" aria-label="Integration navigation">
+            <button type="button" class="active" data-target="panel-email">Email</button>
+            <button type="button" data-target="panel-teams">Teams</button>
+            <button type="button" data-target="panel-slack">Slack</button>
+            <button type="button" data-target="panel-chats">Chats</button>
+        </aside>
 
         <div class="settings-card">
             <div class="settings-header">
                 <h5 class="mb-1 fw-semibold">Alert Delivery Configuration</h5>
-                <p class="settings-subtitle">Configure delivery channels used by the vault notification worker.</p>
+                <p class="settings-subtitle">Select any integration from the left. The right side updates with full setup details.</p>
             </div>
 
             <div class="p-4">
                 <form method="POST" action="{% url 'save_notification_config' %}">
                     {% csrf_token %}
 
-                    <div class="section-chip">Email Channel</div>
-                    <div class="section-card mb-4">
-                        <div class="section-title">Email notification settings</div>
-
+                    <section class="integration-panel" id="panel-email">
+                        <div class="integration-title">Email Integration</div>
+                        <div class="integration-meta">SMTP via Gmail App Password (securely encrypted at rest).</div>
+                        <div class="integration-help">
+                            <ul>
+                                <li>Use a dedicated service mailbox for production alerts.</li>
+                                <li>Recipients support comma-separated values for To/CC/BCC.</li>
+                                <li>App password is never shown again after saving.</li>
+                            </ul>
+                        </div>
                         <div class="mb-3">
                             <label class="form-label">From Email</label>
-                            <input type="email" name="from_email"
-                                   class="form-control"
-                                   value="{{ config.from_email }}"
-                                   required>
+                            <input type="email" name="from_email" class="form-control" value="{{ config.from_email }}" required>
                         </div>
-
                         <div class="mb-3">
                             <label class="form-label">To (Comma Separated)</label>
                             <textarea name="to_email" class="form-control" required>{{ config.to_email }}</textarea>
                         </div>
-
                         <div class="mb-3">
                             <label class="form-label">CC</label>
                             <textarea name="cc_email" class="form-control">{{ config.cc_email }}</textarea>
                         </div>
-
                         <div class="mb-3">
                             <label class="form-label">BCC</label>
                             <textarea name="bcc_email" class="form-control">{{ config.bcc_email }}</textarea>
                         </div>
-
                         <div class="mb-3">
                             <label class="form-label">Gmail App Password</label>
-                            <input type="password"
-                                   name="app_password"
-                                   class="form-control"
-                                   {% if not has_app_password %}required{% endif %}
+                            <input type="password" name="app_password" class="form-control" {% if not has_app_password %}required{% endif %}
                                    placeholder="{% if has_app_password %}Saved securely. Enter only to replace.{% else %}Enter Gmail App Password{% endif %}">
-                            {% if has_app_password %}
-                            <div class="form-text text-success">A password is already stored securely. Leave blank to keep current password.</div>
-                            {% endif %}
+                            {% if has_app_password %}<div class="form-text text-success">An app password is already configured securely.</div>{% endif %}
                         </div>
-                    </div>
+                    </section>
 
-                    <div class="section-chip">Google Chat Channel</div>
-                    <div class="section-card mb-4">
-                        <div class="section-title">Integrate with Google Chat</div>
+                    <section class="integration-panel" id="panel-teams" hidden>
+                        <div class="integration-title">Microsoft Teams Integration</div>
+                        <div class="integration-meta">Incoming webhook to post expiry and policy alerts in a Teams channel.</div>
+                        <div class="integration-help">
+                            <ul>
+                                <li>Create a Teams incoming webhook and paste the generated URL.</li>
+                                <li>Set the target channel name for operational clarity.</li>
+                                <li>Webhook URL is encrypted before persistence.</li>
+                            </ul>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Teams Channel Name</label>
+                            <input type="text" name="microsoft_teams_channel" class="form-control" value="{{ config.microsoft_teams_channel }}" placeholder="example: vault-alerts">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Microsoft Teams Webhook URL</label>
+                            <input type="url" name="microsoft_teams_webhook" class="form-control" placeholder="{% if has_microsoft_teams_webhook %}Saved securely. Enter only to replace.{% else %}https://outlook.office.com/webhook/...{% endif %}">
+                            {% if has_microsoft_teams_webhook %}<div class="form-text text-success">A Teams webhook is already configured securely.</div>{% endif %}
+                        </div>
+                    </section>
 
+                    <section class="integration-panel" id="panel-slack" hidden>
+                        <div class="integration-title">Slack Integration</div>
+                        <div class="integration-meta">Send vault notifications to Slack channels with incoming webhooks.</div>
+                        <div class="integration-help">
+                            <ul>
+                                <li>Create a Slack app with Incoming Webhooks enabled.</li>
+                                <li>Use a dedicated channel like #vault-alerts.</li>
+                                <li>Webhook URL is encrypted before storage.</li>
+                            </ul>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Slack Channel</label>
+                            <input type="text" name="slack_channel" class="form-control" value="{{ config.slack_channel }}" placeholder="example: #vault-alerts">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Slack Webhook URL</label>
+                            <input type="url" name="slack_webhook" class="form-control" placeholder="{% if has_slack_webhook %}Saved securely. Enter only to replace.{% else %}https://hooks.slack.com/services/...{% endif %}">
+                            {% if has_slack_webhook %}<div class="form-text text-success">A Slack webhook is already configured securely.</div>{% endif %}
+                        </div>
+                    </section>
+
+                    <section class="integration-panel" id="panel-chats" hidden>
+                        <div class="integration-title">Google Chat Integration</div>
+                        <div class="integration-meta">Post expiry alerts to Google Chat spaces using webhooks.</div>
+                        <div class="integration-help">
+                            <ul>
+                                <li>Create an incoming webhook in your Google Chat space.</li>
+                                <li>Use a dedicated operations space for vault alerts.</li>
+                                <li>Webhook URL is encrypted and hidden after save.</li>
+                            </ul>
+                        </div>
                         <div class="mb-3">
                             <label class="form-label">Google Chat Incoming Webhook URL</label>
-                            <input type="url"
-                                   name="google_chat_webhook"
-                                   class="form-control"
+                            <input type="url" name="google_chat_webhook" class="form-control"
                                    placeholder="{% if has_google_chat_webhook %}Saved securely. Enter only to replace.{% else %}https://chat.googleapis.com/...{% endif %}">
-                            <div class="form-text">
-                                Create an Incoming Webhook in your Google Chat space and paste the webhook URL here.
-                            </div>
-                            {% if has_google_chat_webhook %}
-                            <div class="form-text text-success">A Google Chat webhook is already stored securely. Leave blank to keep current webhook.</div>
-                            {% endif %}
+                            {% if has_google_chat_webhook %}<div class="form-text text-success">A Google Chat webhook is already stored securely.</div>{% endif %}
                         </div>
-                    </div>
+                    </section>
 
-                    <button type="submit" class="btn btn-primary btn-save w-100">
-                        Save Configuration
-                    </button>
+                    <button type="submit" class="btn btn-primary w-100">Save Configuration</button>
                 </form>
             </div>
         </div>
     </div>
+</div>
+
+<script>
+    const navButtons = Array.from(document.querySelectorAll('.left-nav button'));
+    const panels = Array.from(document.querySelectorAll('.integration-panel'));
+
+    function activatePanel(targetId) {
+        navButtons.forEach((btn) => btn.classList.toggle('active', btn.dataset.target === targetId));
+        panels.forEach((panel) => {
+            panel.hidden = panel.id !== targetId;
+        });
+    }
+
+    navButtons.forEach((btn) => {
+        btn.addEventListener('click', () => activatePanel(btn.dataset.target));
+    });
+</script>
 </body>
 </html>

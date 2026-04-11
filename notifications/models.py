@@ -15,6 +15,10 @@ class EmailConfig(models.Model):
 
     app_password_encrypted = models.BinaryField(null=True, blank=True)
     google_chat_webhook_encrypted = models.BinaryField(null=True, blank=True)
+    microsoft_teams_webhook_encrypted = models.BinaryField(null=True, blank=True)
+    microsoft_teams_channel = models.CharField(max_length=255, blank=True, null=True)
+    slack_webhook_encrypted = models.BinaryField(null=True, blank=True)
+    slack_channel = models.CharField(max_length=255, blank=True, null=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -30,6 +34,18 @@ class EmailConfig(models.Model):
     def get_google_chat_webhook(self) -> str:
         return decrypt_notification_secret(self.google_chat_webhook_encrypted)
 
+    def set_microsoft_teams_webhook(self, webhook_url: str) -> None:
+        self.microsoft_teams_webhook_encrypted = encrypt_notification_secret(webhook_url)
+
+    def get_microsoft_teams_webhook(self) -> str:
+        return decrypt_notification_secret(self.microsoft_teams_webhook_encrypted)
+
+    def set_slack_webhook(self, webhook_url: str) -> None:
+        self.slack_webhook_encrypted = encrypt_notification_secret(webhook_url)
+
+    def get_slack_webhook(self) -> str:
+        return decrypt_notification_secret(self.slack_webhook_encrypted)
+
     @property
     def has_app_password(self) -> bool:
         return bool(self.app_password_encrypted)
@@ -37,6 +53,14 @@ class EmailConfig(models.Model):
     @property
     def has_google_chat_webhook(self) -> bool:
         return bool(self.google_chat_webhook_encrypted)
+
+    @property
+    def has_microsoft_teams_webhook(self) -> bool:
+        return bool(self.microsoft_teams_webhook_encrypted)
+
+    @property
+    def has_slack_webhook(self) -> bool:
+        return bool(self.slack_webhook_encrypted)
 
     def __str__(self):
         return f"Email Config - {self.created_by.username}"
