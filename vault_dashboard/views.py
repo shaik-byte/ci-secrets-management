@@ -514,6 +514,27 @@ def copy_secret(request, secret_id):
     return JsonResponse({"secret": decrypted})
 
 
+@login_required
+@require_GET
+def copy_root_token(request):
+    if not request.user.is_superuser:
+        return JsonResponse({"error": "Only admin/root user can copy root token."}, status=403)
+
+    root_token = request.session.get("vault_key")
+    if not root_token:
+        return JsonResponse({"error": "Vault root token is unavailable in this session."}, status=404)
+
+    AuditLog.objects.create(
+        user=request.user,
+        action='ROOT_TOKEN_COPY',
+        entity='Vault',
+        details="Copied root token from dashboard",
+        ip_address=get_client_ip(request)
+    )
+
+    return JsonResponse({"root_token": root_token})
+
+
 def _within_search_rate_limit(user_id, limit=30, window_seconds=60, namespace="secret-path-search"):
     cache_key = f"{namespace}:{user_id}"
     current = cache.get(cache_key, 0)

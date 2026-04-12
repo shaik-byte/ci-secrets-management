@@ -270,6 +270,11 @@
             Approvals
         </button>
         {% endif %}
+        {% if request.user.is_superuser %}
+        <button id="nav-root-token" class="sidebar-item mt-3" type="button" onclick="showSection('root-token')">
+            Root Token
+        </button>
+        {% endif %}
     </aside>
 
     <main class="content-area">
@@ -552,6 +557,20 @@
                 <tbody id="analysis-query-body"></tbody>
             </table>
         </div>
+    </div>
+</div>
+{% endif %}
+
+{% if request.user.is_superuser %}
+<div id="section-root-token" class="container mt-1" style="display:none;">
+    <div class="card p-4 mb-4 shadow-sm">
+        <h5 class="mb-2">Root Token</h5>
+        <p class="text-muted mb-3">Only root/admin user can access and copy this token. Every copy event is written to audit logs.</p>
+        <div class="input-group">
+            <input id="root-token-value" type="password" class="form-control secret-value" readonly value="••••••••••••••••">
+            <button id="copy-root-token-btn" type="button" class="btn btn-primary" onclick="copyRootToken()">Copy Root Token</button>
+        </div>
+        <small id="root-token-feedback" class="text-muted mt-2"></small>
     </div>
 </div>
 {% endif %}
@@ -1651,7 +1670,7 @@
 <script>
 function showSection(section, options = {}) {
     const { updateUrl = true } = options;
-    const sections = ["secrets", "settings", "feature-core", "analysis", "policy", "approvals"];
+    const sections = ["secrets", "settings", "feature-core", "analysis", "policy", "approvals", "root-token"];
     const sectionTitles = {
         dashboard: "Dashboard",
         secrets: "Secrets Manager",
@@ -1660,6 +1679,7 @@ function showSection(section, options = {}) {
         analysis: "Vault Analysis",
         policy: "Policy Engine",
         approvals: "Approvals",
+        "root-token": "Root Token",
     };
 
     const welcome = document.getElementById("welcome-panel");
@@ -1707,6 +1727,62 @@ function showSection(section, options = {}) {
             url.searchParams.set("section", normalizedSection);
         }
         window.history.pushState({ section: normalizedSection }, "", url);
+    }
+}
+
+async function copyRootToken() {
+    const feedback = document.getElementById("root-token-feedback");
+    const tokenInput = document.getElementById("root-token-value");
+    const copyButton = document.getElementById("copy-root-token-btn");
+    if (!feedback || !tokenInput || !copyButton) return;
+
+    feedback.className = "text-muted mt-2";
+    feedback.textContent = "Fetching root token...";
+
+    try {
+        const response = await fetch("/secrets/copy-root-token/", {
+            method: "GET",
+            credentials: "same-origin",
+            headers: { "X-Requested-With": "XMLHttpRequest" },
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+            throw new Error(payload.error || "Unable to fetch root token.");
+        }
+
+        const token = payload.root_token || "";
+        tokenInput.type = "text";
+        tokenInput.value = token;
+
+        let copied = false;
+        if (navigator.clipboard?.writeText && window.isSecureContext) {
+            try {
+                await navigator.clipboard.writeText(token);
+                copied = true;
+            } catch (clipboardError) {
+                console.warn("Navigator clipboard copy failed, trying fallback.", clipboardError);
+            }
+        }
+        if (!copied) {
+            copied = legacyCopyText(token);
+        }
+        if (!copied) {
+            throw new Error("Unable to access clipboard.");
+        }
+        feedback.className = "text-success mt-2";
+        feedback.textContent = "Root token copied. Audit log entry created.";
+
+        copyButton.disabled = true;
+        setTimeout(() => {
+            tokenInput.type = "password";
+            tokenInput.value = "••••••••••••••••";
+            copyButton.disabled = false;
+            feedback.className = "text-muted mt-2";
+            feedback.textContent = "";
+        }, 7000);
+    } catch (error) {
+        feedback.className = "text-danger mt-2";
+        feedback.textContent = error.message || "Copy failed.";
     }
 }
 
