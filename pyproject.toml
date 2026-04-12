@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vaultcli"
+version = "0.1.0"
+description = "Configurable Vault CLI for local and remote environments"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "requests>=2.31.0",
+  "cryptography>=42.0.0",
+]
+
+[project.scripts]
+vaultcli = "vault_cli.cli:main"
+
+[tool.setuptools]
+packages = ["vault_cli"]
+
+[project.optional-dependencies]
+keyring = ["keyring>=25.0.0"]

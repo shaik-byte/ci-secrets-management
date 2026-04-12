@@ -381,3 +381,74 @@ Response includes:
 - `expires_in` / `expires_at`
 - resolved `machine_policy`
 - effective access scope (`read/write/delete`)
+
+## Vault CLI Package (Windows + Linux)
+
+A standalone CLI package is now included for connecting to local or remote HashiCorp Vault servers.
+
+### Package contents
+
+- Python package: `vault_cli/`
+- Entry command: `vaultcli`
+- Install scripts:
+  - Linux/macOS shell: `scripts/install_linux.sh`
+  - Windows PowerShell: `scripts/install_windows.ps1`
+
+### Install
+
+#### Linux/macOS
+
+```bash
+./scripts/install_linux.sh
+```
+
+#### Windows PowerShell
+
+```powershell
+./scripts/install_windows.ps1
+```
+
+### Initial configuration
+
+Create a profile (environment) and securely store credentials:
+
+```bash
+vaultcli configure --profile dev-local --server-url http://127.0.0.1:8200 --auth-method token
+```
+
+Supported auth methods:
+
+- `token` (root token or any Vault token)
+- `approle` (role_id + secret_id)
+- `userpass` (username + password)
+
+### Multi-environment support
+
+Each profile is a separate Vault environment. Switch active environment with:
+
+```bash
+vaultcli profiles use dev-local
+vaultcli profiles list
+```
+
+### Vault operations
+
+```bash
+# Read
+vaultcli read secret/data/my-app
+
+# Write
+vaultcli write secret/data/my-app username=svc password=s3cr3t
+
+# List
+vaultcli list secret/metadata/
+
+# Delete
+vaultcli delete secret/data/my-app
+```
+
+### Secure local storage
+
+- Profile settings are stored in `~/.vaultcli/config.json`.
+- Credentials are stored in OS keyring when available.
+- If keyring is unavailable, credentials are encrypted with Fernet and stored in `~/.vaultcli/credentials.enc`.
