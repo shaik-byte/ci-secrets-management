@@ -5,6 +5,7 @@ import os
 
 from Crypto.Protocol.SecretSharing import Shamir
 from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth.models import User
 from django.contrib.auth.decorators import login_required
 from django.core.cache import cache
 from django.db import connections
@@ -17,6 +18,10 @@ from .models import VaultConfig
 from .security import get_client_ip, get_location_from_ip
 
 logger = logging.getLogger(__name__)
+
+
+AUTH_METHOD_USERNAME_PASSWORD = "username_password"
+AUTH_METHOD_ROOT_TOKEN = "root_token"
 
 
 def format_share(index: int, share_bytes: bytes) -> str:
@@ -35,6 +40,55 @@ def parse_share(share_value: str) -> tuple[int, bytes]:
         raise ValueError("Share index is out of range.")
 
     return index, share_bytes
+
+
+def _establish_authenticated_session(request, user, vault, root_key: bytes | None = None):
+    login(request, user)
+    request.session.cycle_key()
+
+    if "vault_key" not in request.session:
+        active_root_key = root_key if root_key is not None else decrypt_root_key(vault.encrypted_root_key)
+        request.session["vault_key"] = base64.b64encode(active_root_key).decode()
+
+    request.session["auth_user"] = {
+        "id": user.id,
+        "username": user.username,
+        "is_superuser": user.is_superuser,
+    }
+
+
+def _authenticate_with_username_password(request, vault):
+    username = (request.POST.get("username") or "").strip()
+    password = request.POST.get("password")
+
+    user = authenticate(request, username=username, password=password)
+    if not user:
+        return None, "Invalid username or password."
+
+    _establish_authenticated_session(request, user, vault)
+    return user, None
+
+
+def _authenticate_with_root_token(request, vault):
+    token = (request.POST.get("root_token") or "").strip()
+    if not token:
+        return None, "Root token is required."
+
+    try:
+        provided_root_key = base64.b64decode(token.encode())
+    except Exception:
+        return None, "Invalid root token format."
+
+    expected_root_key = decrypt_root_key(vault.encrypted_root_key)
+    if not hmac.compare_digest(provided_root_key, expected_root_key):
+        return None, "Invalid root token."
+
+    root_user = User.objects.filter(is_superuser=True).order_by("id").first()
+    if not root_user:
+        return None, "No admin/root account is available for root-token login."
+
+    _establish_authenticated_session(request, root_user, vault, root_key=expected_root_key)
+    return root_user, None
 
 
 def home(request):
@@ -201,31 +255,31 @@ def login_view(request):
         return render(request, "sealed.html")
 
     if request.method == "POST":
-        username = request.POST.get("username")
-        password = request.POST.get("password")
+        auth_method = request.POST.get("auth_method", AUTH_METHOD_USERNAME_PASSWORD)
+        handlers = {
+            AUTH_METHOD_USERNAME_PASSWORD: _authenticate_with_username_password,
+            AUTH_METHOD_ROOT_TOKEN: _authenticate_with_root_token,
+        }
 
-        user = authenticate(request, username=username, password=password)
+        handler = handlers.get(auth_method)
+        if not handler:
+            return render(
+                request,
+                "login.html",
+                {"error": "Unsupported authentication method.", "selected_auth_method": AUTH_METHOD_USERNAME_PASSWORD},
+            )
 
+        user, error = handler(request, vault)
         if user:
-            # Session creation point:
-            # 1) authenticate credentials
-            # 2) login() binds authenticated user to server-side session
-            # 3) cycle_key() protects against session fixation
-            login(request, user)
-            request.session.cycle_key()
-            if "vault_key" not in request.session:
-                decrypted_root_key = decrypt_root_key(vault.encrypted_root_key)
-                request.session["vault_key"] = base64.b64encode(decrypted_root_key).decode()
-            request.session["auth_user"] = {
-                "id": user.id,
-                "username": user.username,
-                "is_superuser": user.is_superuser,
-            }
             return redirect("vault_dashboard")
 
-        return render(request, "login.html", {"error": "Invalid credentials"})
+        return render(
+            request,
+            "login.html",
+            {"error": error or "Authentication failed.", "selected_auth_method": auth_method},
+        )
 
-    return render(request, "login.html")
+    return render(request, "login.html", {"selected_auth_method": AUTH_METHOD_USERNAME_PASSWORD})
 
 
 @login_required

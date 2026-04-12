@@ -87,21 +87,40 @@
         {% csrf_token %}
 
         <div class="mb-3">
-            <label class="form-label">Username</label>
-            <input type="text"
-                   name="username"
-                   class="form-control"
-                   placeholder="Enter username"
-                   required>
+            <label for="auth-method" class="form-label">Authentication Method</label>
+            <select id="auth-method" name="auth_method" class="form-select">
+                <option value="username_password" {% if selected_auth_method != "root_token" %}selected{% endif %}>Username / Password</option>
+                <option value="root_token" {% if selected_auth_method == "root_token" %}selected{% endif %}>Root Token</option>
+            </select>
         </div>
 
-        <div class="mb-4">
-            <label class="form-label">Password</label>
+        <div id="username-password-fields">
+            <div class="mb-3">
+                <label class="form-label">Username</label>
+                <input type="text"
+                       id="username-input"
+                       name="username"
+                       class="form-control"
+                       placeholder="Enter username">
+            </div>
+
+            <div class="mb-4">
+                <label class="form-label">Password</label>
+                <input type="password"
+                       id="password-input"
+                       name="password"
+                       class="form-control"
+                       placeholder="Enter password">
+            </div>
+        </div>
+
+        <div id="root-token-field" class="mb-4">
+            <label class="form-label">Root Token</label>
             <input type="password"
-                   name="password"
+                   id="root-token-input"
+                   name="root_token"
                    class="form-control"
-                   placeholder="Enter password"
-                   required>
+                   placeholder="Enter root token">
         </div>
 
         <button type="submit" class="btn btn-primary w-100">
@@ -114,6 +133,35 @@
     </div>
 
 </div>
+
+<script>
+    function toggleAuthFields() {
+        const methodSelect = document.getElementById("auth-method");
+        const usernamePasswordFields = document.getElementById("username-password-fields");
+        const rootTokenField = document.getElementById("root-token-field");
+        const usernameInput = document.getElementById("username-input");
+        const passwordInput = document.getElementById("password-input");
+        const rootTokenInput = document.getElementById("root-token-input");
+
+        if (!methodSelect) return;
+
+        const usingRootToken = methodSelect.value === "root_token";
+        if (usernamePasswordFields) usernamePasswordFields.style.display = usingRootToken ? "none" : "block";
+        if (rootTokenField) rootTokenField.style.display = usingRootToken ? "block" : "none";
+
+        if (usernameInput) usernameInput.required = !usingRootToken;
+        if (passwordInput) passwordInput.required = !usingRootToken;
+        if (rootTokenInput) rootTokenInput.required = usingRootToken;
+    }
+
+    document.addEventListener("DOMContentLoaded", function () {
+        const methodSelect = document.getElementById("auth-method");
+        if (methodSelect) {
+            methodSelect.addEventListener("change", toggleAuthFields);
+        }
+        toggleAuthFields();
+    });
+</script>
 
 </body>
 </html>
