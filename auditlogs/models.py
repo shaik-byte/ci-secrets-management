@@ -11,6 +11,8 @@ class AuditLog(models.Model):
         ('DELETE', 'Delete'),
         ('UPDATE', 'Update'),
         ('REVEAL', 'Reveal'),
+        ('COPY', 'Copy'),
+        ('ROOT_TOKEN_COPY', 'Root Token Copy'),
         ('LOGIN', 'Login'),
         ('LOGOUT', 'Logout'),
     ]

@@ -8,6 +8,7 @@ urlpatterns = [
     path('add-secret/<int:folder_id>/', views.add_secret, name="add_secret"),
     path('reveal-secret/<int:secret_id>/', views.reveal_secret, name="reveal_secret"),
     path('copy-secret/<int:secret_id>/', views.copy_secret, name="copy_secret"),
+    path('copy-root-token/', views.copy_root_token, name="copy_root_token"),
     path('search-secret-paths/', views.search_secret_paths, name="search_secret_paths"),
     path('search-expiring-secrets/', views.search_expiring_secrets, name="search_expiring_secrets"),
     path('analysis/run/', views.run_vault_analysis, name="run_vault_analysis"),

@@ -224,6 +224,39 @@
             height: 1rem;
             vertical-align: -0.125em;
         }
+
+        body.vault-unavailable .content-area,
+        body.vault-unavailable .sidebar {
+            pointer-events: none;
+            user-select: none;
+            opacity: 0.5;
+            filter: grayscale(0.2);
+        }
+
+        .vault-unavailable-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            background: rgba(15, 23, 42, 0.82);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+
+        body.vault-unavailable .vault-unavailable-overlay {
+            display: flex;
+        }
+
+        .vault-unavailable-card {
+            max-width: 520px;
+            width: 100%;
+            border-radius: 14px;
+            background: #ffffff;
+            color: #0f172a;
+            padding: 1.25rem;
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+        }
     </style>
 </head>
 
@@ -598,6 +631,16 @@
                 <button type="submit" class="btn btn-primary w-100">Save Regex</button>
             </div>
         </form>
+
+        {% if request.user.is_superuser %}
+        <hr class="my-4">
+        <h5 class="mb-2">Root Token (Admin only)</h5>
+        <p class="text-muted mb-3">Copy root token to clipboard. Token value is never rendered in this UI. Every copy action is logged in audit logs.</p>
+        <div class="d-flex gap-2 align-items-center">
+            <button id="copy-root-token-btn" type="button" class="btn btn-outline-danger btn-sm" onclick="copyRootToken()">Copy Root Token</button>
+            <small id="root-token-feedback" class="text-muted"></small>
+        </div>
+        {% endif %}
     </div>
 </div>
 {% endif %}
@@ -1645,10 +1688,73 @@
 {% endif %}
     </main>
 </div>
+<div id="vault-unavailable-overlay" class="vault-unavailable-overlay" aria-live="assertive">
+    <div class="vault-unavailable-card">
+        <h5 class="mb-2">Vault session unavailable</h5>
+        <p id="vault-unavailable-message" class="text-muted mb-3">
+            Unable to reach vault server. Actions are blocked until vault is unsealed again.
+        </p>
+        <a href="/unseal/" class="btn btn-danger btn-sm">Go to Unseal</a>
+    </div>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
 <script>
+let vaultUnavailableLocked = false;
+const nativeFetch = window.fetch.bind(window);
+
+function lockVaultUi(message) {
+    if (vaultUnavailableLocked) return;
+    vaultUnavailableLocked = true;
+    document.body.classList.add("vault-unavailable");
+    const messageEl = document.getElementById("vault-unavailable-message");
+    if (messageEl && message) {
+        messageEl.textContent = message;
+    }
+}
+
+function routeToUnseal() {
+    const currentPath = window.location.pathname || "";
+    if (!currentPath.startsWith("/unseal/")) {
+        window.location.href = "/unseal/";
+    }
+}
+
+window.fetch = async (...args) => {
+    try {
+        const response = await nativeFetch(...args);
+        if (response.redirected && response.url && response.url.includes("/unseal/")) {
+            lockVaultUi("Vault is sealed. Redirecting to unseal flow.");
+            routeToUnseal();
+        }
+        return response;
+    } catch (error) {
+        lockVaultUi("Vault server is unavailable. Actions are disabled. Redirecting to unseal flow.");
+        routeToUnseal();
+        throw error;
+    }
+};
+
+function startVaultHeartbeat() {
+    const heartbeat = async () => {
+        if (vaultUnavailableLocked) return;
+        try {
+            await nativeFetch("/login/", {
+                method: "GET",
+                credentials: "same-origin",
+                headers: { "X-Requested-With": "XMLHttpRequest" },
+                cache: "no-store",
+            });
+        } catch (_) {
+            lockVaultUi("Vault server is unavailable. Actions are disabled. Redirecting to unseal flow.");
+            routeToUnseal();
+        }
+    };
+    heartbeat();
+    setInterval(heartbeat, 10000);
+}
+
 function showSection(section, options = {}) {
     const { updateUrl = true } = options;
     const sections = ["secrets", "settings", "feature-core", "analysis", "policy", "approvals"];
@@ -1710,7 +1816,60 @@ function showSection(section, options = {}) {
     }
 }
 
+async function copyRootToken() {
+    const feedback = document.getElementById("root-token-feedback");
+    const copyButton = document.getElementById("copy-root-token-btn");
+    if (!feedback || !copyButton) return;
+
+    feedback.className = "text-muted mt-2";
+    feedback.textContent = "Fetching root token...";
+
+    try {
+        const response = await fetch("/secrets/copy-root-token/", {
+            method: "GET",
+            credentials: "same-origin",
+            headers: { "X-Requested-With": "XMLHttpRequest" },
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+            throw new Error(payload.error || "Unable to fetch root token.");
+        }
+
+        const token = payload.root_token || "";
+
+        let copied = false;
+        if (navigator.clipboard?.writeText && window.isSecureContext) {
+            try {
+                await navigator.clipboard.writeText(token);
+                copied = true;
+            } catch (clipboardError) {
+                console.warn("Navigator clipboard copy failed, trying fallback.", clipboardError);
+            }
+        }
+        if (!copied) {
+            copied = legacyCopyText(token);
+        }
+        if (!copied) {
+            throw new Error("Unable to access clipboard.");
+        }
+        feedback.className = "text-success mt-2";
+        feedback.textContent = "Root token copied. Audit log entry created.";
+
+        copyButton.disabled = true;
+        setTimeout(() => {
+            copyButton.disabled = false;
+            feedback.className = "text-muted mt-2";
+            feedback.textContent = "";
+        }, 7000);
+    } catch (error) {
+        feedback.className = "text-danger mt-2";
+        feedback.textContent = error.message || "Copy failed.";
+    }
+}
+
 document.addEventListener("DOMContentLoaded", function () {
+    startVaultHeartbeat();
+
     const requestedSection = new URLSearchParams(window.location.search).get("section");
     const savedSection = localStorage.getItem("vault_active_section");
     const preferredSection = requestedSection || savedSection || "dashboard";
