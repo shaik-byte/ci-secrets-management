@@ -1968,8 +1968,11 @@ document.addEventListener("submit", async function (event) {
     if (editForm) {
         event.preventDefault();
         const formData = new FormData(editForm);
-        const activeSection = localStorage.getItem("vault_active_section") || "secrets";
         const modalElement = editForm.closest(".modal");
+        const submitButton = editForm.querySelector('button[type="submit"]');
+        if (submitButton) {
+            submitButton.disabled = true;
+        }
 
         try {
             const response = await fetch(editForm.action, {
@@ -1984,14 +1987,18 @@ document.addEventListener("submit", async function (event) {
             }
 
             if (modalElement && window.bootstrap?.Modal) {
-                const modalInstance = bootstrap.Modal.getOrCreateInstance(modalElement);
+                const modalInstance = bootstrap.Modal.getInstance(modalElement) || bootstrap.Modal.getOrCreateInstance(modalElement);
                 modalInstance.hide();
+                modalElement.addEventListener("hidden.bs.modal", clearModalArtifacts, { once: true });
             }
             editForm.reset();
-            clearModalArtifacts();
-            await refreshContentArea(activeSection);
+            setTimeout(clearModalArtifacts, 100);
         } catch (error) {
             window.alert(error.message || "Unable to update secret value.");
+        } finally {
+            if (submitButton) {
+                submitButton.disabled = false;
+            }
         }
         return;
     }
