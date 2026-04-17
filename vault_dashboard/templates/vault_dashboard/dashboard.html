@@ -1474,7 +1474,9 @@
                     <!-- ADD FOLDER -->
                     <form method="POST"
                           action="{% url 'add_folder' env.id %}"
-                          class="row g-2 mb-3 folder-create-form align-items-center">
+                          class="row g-2 mb-3 folder-create-form align-items-center"
+                          data-env-id="{{ env.id }}"
+                          data-no-ajax="true">
                         {% csrf_token %}
                         <div class="col-md-5">
                             <input type="text" name="name" class="form-control" placeholder="Folder Name" required>
@@ -1949,6 +1951,25 @@ async function refreshContentArea(sectionName = "secrets") {
     }
 }
 
+async function refreshEnvironmentSection(envId) {
+    if (!envId) return;
+    const response = await fetch(window.location.href, {
+        headers: { "X-Requested-With": "XMLHttpRequest" },
+        credentials: "same-origin",
+    });
+    const html = await response.text();
+    const parsed = new DOMParser().parseFromString(html, "text/html");
+    const newBody = parsed.querySelector(`#collapseEnv${envId} .accordion-body`);
+    const currentBody = document.querySelector(`#collapseEnv${envId} .accordion-body`);
+    if (!newBody || !currentBody) return;
+
+    currentBody.innerHTML = newBody.innerHTML;
+    const envPanel = document.getElementById(`collapseEnv${envId}`);
+    if (envPanel) {
+        envPanel.classList.add("show");
+    }
+}
+
 window.addEventListener("popstate", function (event) {
     const sectionFromState = event.state?.section;
     const sectionFromUrl = new URLSearchParams(window.location.search).get("section");
@@ -1964,6 +1985,39 @@ function clearModalArtifacts() {
 }
 
 document.addEventListener("submit", async function (event) {
+    const folderForm = event.target.closest("form.folder-create-form");
+    if (folderForm) {
+        event.preventDefault();
+        const formData = new FormData(folderForm);
+        const submitButton = folderForm.querySelector('button[type="submit"]');
+        const envId = folderForm.dataset.envId;
+        if (submitButton) {
+            submitButton.disabled = true;
+        }
+
+        try {
+            const response = await fetch(folderForm.action, {
+                method: folderForm.method || "POST",
+                body: formData,
+                headers: { "X-Requested-With": "XMLHttpRequest" },
+                credentials: "same-origin",
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload.ok === false) {
+                throw new Error(payload.error || "Unable to create folder.");
+            }
+            folderForm.reset();
+            await refreshEnvironmentSection(envId);
+        } catch (error) {
+            window.alert(error.message || "Unable to create folder.");
+        } finally {
+            if (submitButton) {
+                submitButton.disabled = false;
+            }
+        }
+        return;
+    }
+
     const editForm = event.target.closest("form.edit-secret-form");
     if (editForm) {
         event.preventDefault();

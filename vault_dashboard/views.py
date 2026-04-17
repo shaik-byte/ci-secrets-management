@@ -388,13 +388,22 @@ def add_environment(request):
 # =========================
 @login_required
 def add_folder(request, env_id):
+    is_ajax = request.headers.get("x-requested-with") == "XMLHttpRequest"
     env = get_object_or_404(Environment, id=env_id)
     if not _has_access(request.user, "write", environment=env):
+        if is_ajax:
+            return JsonResponse({"ok": False, "error": "You do not have write access to this environment."}, status=403)
         return HttpResponseForbidden("You do not have write access to this environment.")
 
     if request.method == "POST":
-        name = request.POST.get("name")
+        name = (request.POST.get("name") or "").strip()
         owner_email = (request.POST.get("owner_email") or "").strip()
+        if not name:
+            error_message = "Folder name is required."
+            if is_ajax:
+                return JsonResponse({"ok": False, "error": error_message}, status=400)
+            messages.error(request, error_message)
+            return redirect("vault_dashboard")
 
         folder = Folder.objects.create(name=name, owner_email=owner_email, environment=env)
 
@@ -405,7 +414,18 @@ def add_folder(request, env_id):
             details=f"Created folder '{name}' in environment '{env.name}'",
             ip_address=get_client_ip(request)
         )
+        if is_ajax:
+            return JsonResponse({
+                "ok": True,
+                "folder": {
+                    "id": folder.id,
+                    "name": folder.name,
+                    "owner_email": folder.owner_email or "",
+                }
+            })
 
+    if is_ajax:
+        return JsonResponse({"ok": False, "error": "Invalid request method."}, status=405)
     return redirect("vault_dashboard")
 
 
