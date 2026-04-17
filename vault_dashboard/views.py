@@ -978,6 +978,55 @@ def toggle_secret_access(request, secret_id):
     return redirect("vault_dashboard")
 
 
+@login_required
+def update_secret_value(request, secret_id):
+    if request.method != "POST":
+        return HttpResponseForbidden("Invalid request method")
+
+    secret = get_object_or_404(Secret, id=secret_id)
+    if not _has_access(request.user, "write", secret=secret):
+        return HttpResponseForbidden("You do not have write access to this secret.")
+
+    new_value = request.POST.get("value")
+    if not new_value:
+        messages.error(request, "Please provide a new secret value.")
+        return redirect("vault_dashboard")
+
+    fallback_policy = SecretPolicy.objects.filter(created_by=request.user).first()
+    env_policy = EnvironmentSecretPolicy.objects.filter(environment=secret.folder.environment).first()
+    policy = env_policy if (env_policy and env_policy.secret_value_regex) else fallback_policy
+    regex_pattern = policy.secret_value_regex.strip() if policy else ""
+    regex_mode = policy.regex_mode if policy else "match"
+
+    if regex_pattern:
+        try:
+            is_match = bool(re.fullmatch(regex_pattern, new_value))
+
+            if regex_mode == "match" and not is_match:
+                messages.error(request, "Secret should match the configured regex policy.")
+                return redirect("vault_dashboard")
+
+            if regex_mode == "not_match" and is_match:
+                messages.error(request, "Secret should not match the configured regex policy.")
+                return redirect("vault_dashboard")
+        except re.error:
+            messages.error(request, "Configured regex policy is invalid. Please update Settings.")
+            return redirect("vault_dashboard")
+
+    secret.encrypted_value = encrypt_value(request, new_value)
+    secret.save(update_fields=["encrypted_value"])
+
+    AuditLog.objects.create(
+        user=request.user,
+        action='UPDATE',
+        entity='Secret',
+        details=f"Updated value for secret '{secret.name}'",
+        ip_address=get_client_ip(request)
+    )
+    messages.success(request, f"Updated value for secret '{secret.name}'.")
+    return redirect("vault_dashboard")
+
+
 def _create_deletion_approval(request, target_type, target_obj, note=""):
     existing = DeletionApprovalRequest.objects.filter(
         target_type=target_type,

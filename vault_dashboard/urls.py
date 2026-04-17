@@ -19,6 +19,7 @@ urlpatterns = [
     path('analysis/queries/save/', views.save_analysis_query, name="save_analysis_query"),
     path('analysis/queries/', views.list_analysis_queries, name="list_analysis_queries"),
     path('toggle-secret-access/<int:secret_id>/', views.toggle_secret_access, name="toggle_secret_access"),
+    path('update-secret-value/<int:secret_id>/', views.update_secret_value, name="update_secret_value"),
     path('settings/save-secret-policy/', views.save_secret_policy, name="save_secret_policy"),
     path('settings/save-feature-access/', views.save_feature_access, name="save_feature_access"),
     path('policy-engine/save-ui/', views.save_access_policy_ui, name="save_access_policy_ui"),
