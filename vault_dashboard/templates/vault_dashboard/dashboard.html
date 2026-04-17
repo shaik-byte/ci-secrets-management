@@ -1670,7 +1670,10 @@
                                                             <h5 class="modal-title">Edit Secret Value</h5>
                                                             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                                                         </div>
-                                                        <form method="POST" action="{% url 'update_secret_value' secret.id %}">
+                                                        <form method="POST"
+                                                              action="{% url 'update_secret_value' secret.id %}"
+                                                              class="edit-secret-form"
+                                                              data-no-ajax="true">
                                                             {% csrf_token %}
                                                             <div class="modal-body">
                                                                 <p class="mb-2 small text-muted">Enter a new value for <strong>{{ secret.name }}</strong>. The existing value is not shown.</p>
@@ -1961,6 +1964,38 @@ function clearModalArtifacts() {
 }
 
 document.addEventListener("submit", async function (event) {
+    const editForm = event.target.closest("form.edit-secret-form");
+    if (editForm) {
+        event.preventDefault();
+        const formData = new FormData(editForm);
+        const activeSection = localStorage.getItem("vault_active_section") || "secrets";
+        const modalElement = editForm.closest(".modal");
+
+        try {
+            const response = await fetch(editForm.action, {
+                method: editForm.method || "POST",
+                body: formData,
+                headers: { "X-Requested-With": "XMLHttpRequest" },
+                credentials: "same-origin",
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload.ok === false) {
+                throw new Error(payload.error || "Unable to update secret value.");
+            }
+
+            if (modalElement && window.bootstrap?.Modal) {
+                const modalInstance = bootstrap.Modal.getOrCreateInstance(modalElement);
+                modalInstance.hide();
+            }
+            editForm.reset();
+            clearModalArtifacts();
+            await refreshContentArea(activeSection);
+        } catch (error) {
+            window.alert(error.message || "Unable to update secret value.");
+        }
+        return;
+    }
+
     const form = event.target;
     if (!isAjaxManagedForm(form)) return;
 

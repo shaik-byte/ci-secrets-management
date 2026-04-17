@@ -980,16 +980,25 @@ def toggle_secret_access(request, secret_id):
 
 @login_required
 def update_secret_value(request, secret_id):
+    is_ajax = request.headers.get("x-requested-with") == "XMLHttpRequest"
+
     if request.method != "POST":
+        if is_ajax:
+            return JsonResponse({"ok": False, "error": "Invalid request method."}, status=405)
         return HttpResponseForbidden("Invalid request method")
 
     secret = get_object_or_404(Secret, id=secret_id)
     if not _has_access(request.user, "write", secret=secret):
+        if is_ajax:
+            return JsonResponse({"ok": False, "error": "You do not have write access to this secret."}, status=403)
         return HttpResponseForbidden("You do not have write access to this secret.")
 
     new_value = request.POST.get("value")
     if not new_value:
-        messages.error(request, "Please provide a new secret value.")
+        error_message = "Please provide a new secret value."
+        if is_ajax:
+            return JsonResponse({"ok": False, "error": error_message}, status=400)
+        messages.error(request, error_message)
         return redirect("vault_dashboard")
 
     fallback_policy = SecretPolicy.objects.filter(created_by=request.user).first()
@@ -1003,14 +1012,23 @@ def update_secret_value(request, secret_id):
             is_match = bool(re.fullmatch(regex_pattern, new_value))
 
             if regex_mode == "match" and not is_match:
-                messages.error(request, "Secret should match the configured regex policy.")
+                error_message = "Secret should match the configured regex policy."
+                if is_ajax:
+                    return JsonResponse({"ok": False, "error": error_message}, status=400)
+                messages.error(request, error_message)
                 return redirect("vault_dashboard")
 
             if regex_mode == "not_match" and is_match:
-                messages.error(request, "Secret should not match the configured regex policy.")
+                error_message = "Secret should not match the configured regex policy."
+                if is_ajax:
+                    return JsonResponse({"ok": False, "error": error_message}, status=400)
+                messages.error(request, error_message)
                 return redirect("vault_dashboard")
         except re.error:
-            messages.error(request, "Configured regex policy is invalid. Please update Settings.")
+            error_message = "Configured regex policy is invalid. Please update Settings."
+            if is_ajax:
+                return JsonResponse({"ok": False, "error": error_message}, status=400)
+            messages.error(request, error_message)
             return redirect("vault_dashboard")
 
     secret.encrypted_value = encrypt_value(request, new_value)
@@ -1023,7 +1041,10 @@ def update_secret_value(request, secret_id):
         details=f"Updated value for secret '{secret.name}'",
         ip_address=get_client_ip(request)
     )
-    messages.success(request, f"Updated value for secret '{secret.name}'.")
+    success_message = f"Updated value for secret '{secret.name}'."
+    if is_ajax:
+        return JsonResponse({"ok": True, "message": success_message})
+    messages.success(request, success_message)
     return redirect("vault_dashboard")
 
 
