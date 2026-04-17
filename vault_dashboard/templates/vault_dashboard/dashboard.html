@@ -1562,6 +1562,8 @@
                                     <form method="POST"
                                           action="{% url 'add_secret' folder.id %}"
                                           class="row g-2 mb-3 secret-form"
+                                          data-folder-id="{{ folder.id }}"
+                                          data-no-ajax="true"
                                           data-secret-regex="{{ env.secret_value_regex|default:''|escapejs }}"
                                           data-regex-mode="{{ env.regex_mode|default:'match' }}">
                                         {% csrf_token %}
@@ -1968,6 +1970,27 @@ async function refreshEnvironmentSection(envId) {
     if (envPanel) {
         envPanel.classList.add("show");
     }
+    attachSecretRegexValidation();
+}
+
+async function refreshFolderSection(folderId) {
+    if (!folderId) return;
+    const response = await fetch(window.location.href, {
+        headers: { "X-Requested-With": "XMLHttpRequest" },
+        credentials: "same-origin",
+    });
+    const html = await response.text();
+    const parsed = new DOMParser().parseFromString(html, "text/html");
+    const newBody = parsed.querySelector(`#collapseFolder${folderId} .accordion-body`);
+    const currentBody = document.querySelector(`#collapseFolder${folderId} .accordion-body`);
+    if (!newBody || !currentBody) return;
+
+    currentBody.innerHTML = newBody.innerHTML;
+    const folderPanel = document.getElementById(`collapseFolder${folderId}`);
+    if (folderPanel) {
+        folderPanel.classList.add("show");
+    }
+    attachSecretRegexValidation();
 }
 
 window.addEventListener("popstate", function (event) {
@@ -1985,6 +2008,42 @@ function clearModalArtifacts() {
 }
 
 document.addEventListener("submit", async function (event) {
+    const secretForm = event.target.closest("form.secret-form");
+    if (secretForm) {
+        if (event.defaultPrevented) {
+            return;
+        }
+        event.preventDefault();
+        const formData = new FormData(secretForm);
+        const submitButton = secretForm.querySelector('button[type="submit"]');
+        const folderId = secretForm.dataset.folderId;
+        if (submitButton) {
+            submitButton.disabled = true;
+        }
+
+        try {
+            const response = await fetch(secretForm.action, {
+                method: secretForm.method || "POST",
+                body: formData,
+                headers: { "X-Requested-With": "XMLHttpRequest" },
+                credentials: "same-origin",
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload.ok === false) {
+                throw new Error(payload.error || "Unable to create secret.");
+            }
+            secretForm.reset();
+            await refreshFolderSection(folderId);
+        } catch (error) {
+            window.alert(error.message || "Unable to create secret.");
+        } finally {
+            if (submitButton) {
+                submitButton.disabled = false;
+            }
+        }
+        return;
+    }
+
     const folderForm = event.target.closest("form.folder-create-form");
     if (folderForm) {
         event.preventDefault();
@@ -2735,6 +2794,10 @@ async function loadSavedQueries() {
 
 function attachSecretRegexValidation() {
     document.querySelectorAll("form.secret-form").forEach(form => {
+        if (form.dataset.regexValidationAttached === "true") {
+            return;
+        }
+        form.dataset.regexValidationAttached = "true";
         form.addEventListener("submit", function (e) {
             const pattern = form.dataset.secretRegex || "";
             const mode = form.dataset.regexMode || "match";
