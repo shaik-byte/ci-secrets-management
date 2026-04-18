@@ -179,6 +179,7 @@ You can now manage secrets from the terminal without using the web UI.
 ### CLI file
 
 - `cli/vault_agent.py`
+- `cli/civault.py` (remote CLI for server URL based access)
 
 ### What it supports
 
@@ -237,6 +238,61 @@ python cli/vault_agent.py login --root-token "<YOUR_ROOT_TOKEN_OR_KEK>"
 After login, the token is stored locally in:
 
 - `~/.vault_cli_session.json`
+
+---
+
+## 🧰 civault CLI (URL-first workflow)
+
+If users want to connect to a running vault server through CLI, use **civault**.
+
+### Install CLI package (required)
+
+```bash
+# from repository root
+python -m pip install .
+
+# verify binary
+civault --help
+```
+
+All Vault operations for remote access should be executed via the installed `civault` command.
+
+### Key flow
+
+1. Configure URL once.
+2. Authenticate.
+3. Run secret operations.
+
+### Commands
+
+```bash
+# Configure vault URL (required first step)
+civault configure --url http://127.0.0.1:8000
+
+# Login (username/password)
+civault login --username admin --password <PASSWORD>
+
+# or Login with root token
+civault login --root-token <ROOT_TOKEN>
+
+# Check status
+civault status
+
+# List secrets
+civault list-secrets --environment prod --folder payments
+
+# Add secret
+civault add-secret --environment prod --folder payments --name API_KEY --value supersecret
+
+# Delete secret by name or id
+civault delete-secret --environment prod --folder payments --name API_KEY
+civault delete-secret --environment prod --folder payments --id 1
+```
+
+### civault local files
+
+- Config: `~/.civault/config.json`
+- Session cookies: `~/.civault/session.json`
 
 You can also avoid local session and pass token every command:
 

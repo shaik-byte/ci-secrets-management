@@ -1735,6 +1735,207 @@ def _build_scope_payload(access_policy):
 
 
 @csrf_exempt
+@login_required
+@require_GET
+def cli_ping(request):
+    return JsonResponse(
+        {
+            "ok": True,
+            "vault": "civault",
+            "user": request.user.username,
+            "is_superuser": request.user.is_superuser,
+        }
+    )
+
+
+@csrf_exempt
+@login_required
+@require_GET
+def cli_list_secrets(request):
+    environment_name = (request.GET.get("environment") or "").strip()
+    folder_name = (request.GET.get("folder") or "").strip()
+    show_values = str(request.GET.get("show_values") or "").lower() in {"1", "true", "yes"}
+
+    if not environment_name or not folder_name:
+        return JsonResponse({"ok": False, "error": "Both 'environment' and 'folder' are required."}, status=400)
+
+    environment = Environment.objects.filter(name=environment_name).first()
+    if not environment:
+        return JsonResponse({"ok": False, "error": f"Environment '{environment_name}' not found."}, status=404)
+
+    folder = Folder.objects.filter(name=folder_name, environment=environment).first()
+    if not folder:
+        return JsonResponse({"ok": False, "error": f"Folder '{folder_name}' not found in '{environment_name}'."}, status=404)
+
+    if not _has_access(request.user, "read", folder=folder):
+        return JsonResponse({"ok": False, "error": "You do not have read access to this folder."}, status=403)
+
+    rows = []
+    for secret in Secret.objects.filter(folder=folder).order_by("id"):
+        item = {
+            "id": secret.id,
+            "name": secret.name,
+            "service_name": secret.service_name or "",
+            "expire_date": secret.expire_date.isoformat() if secret.expire_date else None,
+        }
+        if show_values:
+            try:
+                item["value"] = decrypt_value(request, secret.encrypted_value)
+            except Exception:
+                item["value"] = None
+        rows.append(item)
+
+    return JsonResponse(
+        {
+            "ok": True,
+            "vault": "civault",
+            "environment": environment_name,
+            "folder": folder_name,
+            "count": len(rows),
+            "secrets": rows,
+        }
+    )
+
+
+@csrf_exempt
+@login_required
+def cli_add_secret(request):
+    if request.method != "POST":
+        return JsonResponse({"ok": False, "error": "POST method required."}, status=405)
+
+    payload = {}
+    if request.content_type and "application/json" in request.content_type:
+        try:
+            payload = json.loads(request.body.decode("utf-8") or "{}")
+        except Exception:
+            return JsonResponse({"ok": False, "error": "Invalid JSON body."}, status=400)
+    else:
+        payload = request.POST
+
+    environment_name = (payload.get("environment") or "").strip()
+    folder_name = (payload.get("folder") or "").strip()
+    name = (payload.get("name") or "").strip()
+    value = payload.get("value")
+    service_name = (payload.get("service_name") or "").strip()
+    expire_raw = (payload.get("expire_date") or "").strip()
+
+    if not environment_name or not folder_name or not name or not value:
+        return JsonResponse(
+            {"ok": False, "error": "environment, folder, name and value are required."},
+            status=400,
+        )
+
+    environment = Environment.objects.filter(name=environment_name).first()
+    if not environment:
+        return JsonResponse({"ok": False, "error": f"Environment '{environment_name}' not found."}, status=404)
+
+    folder = Folder.objects.filter(name=folder_name, environment=environment).first()
+    if not folder:
+        return JsonResponse({"ok": False, "error": f"Folder '{folder_name}' not found in '{environment_name}'."}, status=404)
+
+    if not _has_access(request.user, "write", folder=folder):
+        return JsonResponse({"ok": False, "error": "You do not have write access to this folder."}, status=403)
+
+    expire_date = None
+    if expire_raw:
+        try:
+            expire_date = datetime.strptime(expire_raw, "%Y-%m-%d").date()
+        except ValueError:
+            return JsonResponse({"ok": False, "error": "expire_date must be in YYYY-MM-DD format."}, status=400)
+
+    secret = Secret.objects.create(
+        name=name,
+        service_name=service_name,
+        encrypted_value=encrypt_value(request, value),
+        expire_date=expire_date,
+        folder=folder,
+    )
+    AuditLog.objects.create(
+        user=request.user,
+        action="CREATE",
+        entity="Secret",
+        details=f"[CLI] Created secret '{name}' in folder '{folder.name}'",
+        ip_address=get_client_ip(request),
+    )
+
+    return JsonResponse(
+        {
+            "ok": True,
+            "vault": "civault",
+            "secret": {
+                "id": secret.id,
+                "name": secret.name,
+                "service_name": secret.service_name or "",
+                "expire_date": secret.expire_date.isoformat() if secret.expire_date else None,
+            },
+        },
+        status=201,
+    )
+
+
+@csrf_exempt
+@login_required
+def cli_delete_secret(request):
+    if request.method != "POST":
+        return JsonResponse({"ok": False, "error": "POST method required."}, status=405)
+
+    payload = {}
+    if request.content_type and "application/json" in request.content_type:
+        try:
+            payload = json.loads(request.body.decode("utf-8") or "{}")
+        except Exception:
+            return JsonResponse({"ok": False, "error": "Invalid JSON body."}, status=400)
+    else:
+        payload = request.POST
+
+    environment_name = (payload.get("environment") or "").strip()
+    folder_name = (payload.get("folder") or "").strip()
+    secret_id = payload.get("id")
+    secret_name = (payload.get("name") or "").strip()
+
+    if not environment_name or not folder_name:
+        return JsonResponse({"ok": False, "error": "environment and folder are required."}, status=400)
+    if secret_id in (None, "") and not secret_name:
+        return JsonResponse({"ok": False, "error": "Provide either id or name to delete a secret."}, status=400)
+
+    environment = Environment.objects.filter(name=environment_name).first()
+    if not environment:
+        return JsonResponse({"ok": False, "error": f"Environment '{environment_name}' not found."}, status=404)
+
+    folder = Folder.objects.filter(name=folder_name, environment=environment).first()
+    if not folder:
+        return JsonResponse({"ok": False, "error": f"Folder '{folder_name}' not found in '{environment_name}'."}, status=404)
+
+    if not _has_access(request.user, "delete", folder=folder):
+        return JsonResponse({"ok": False, "error": "You do not have delete access to this folder."}, status=403)
+
+    secrets = Secret.objects.filter(folder=folder)
+    if secret_id not in (None, ""):
+        try:
+            secrets = secrets.filter(id=int(secret_id))
+        except ValueError:
+            return JsonResponse({"ok": False, "error": "id must be an integer."}, status=400)
+    else:
+        secrets = secrets.filter(name=secret_name)
+
+    secret = secrets.first()
+    if not secret:
+        return JsonResponse({"ok": False, "error": "Secret not found in the requested scope."}, status=404)
+
+    deleted = {"id": secret.id, "name": secret.name}
+    secret.delete()
+    AuditLog.objects.create(
+        user=request.user,
+        action="DELETE",
+        entity="Secret",
+        details=f"[CLI] Deleted secret '{deleted['name']}' from folder '{folder.name}'",
+        ip_address=get_client_ip(request),
+    )
+
+    return JsonResponse({"ok": True, "vault": "civault", "deleted": deleted})
+
+
+@csrf_exempt
 def jwt_machine_login(request):
     if request.method != "POST":
         return JsonResponse({"error": "POST method required."}, status=405)
