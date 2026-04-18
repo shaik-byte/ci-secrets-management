@@ -288,14 +288,28 @@ def cmd_apply_policy(args: argparse.Namespace) -> int:
         "policy_document": policy_document,
         "document_format": args.format,
     }
-    response = session.post(f"{base_url}/secrets/cli/policies/apply/", json=payload, timeout=20)
+    response = session.post(
+        f"{base_url}/secrets/cli/policies/apply/",
+        json=payload,
+        timeout=20,
+        allow_redirects=False,
+    )
+    if response.status_code in {301, 302, 303, 307, 308}:
+        location = response.headers.get("Location", "")
+        raise CliError(
+            "Policy apply was redirected by the server "
+            f"(HTTP {response.status_code} -> {location or 'unknown location'}). "
+            "This usually means your CLI session is not authenticated for CLI API routes, "
+            "or your server branch does not expose /secrets/cli/policies/apply/."
+        )
     if response.status_code != 200:
         raise CliError(f"Policy apply failed: {_extract_error(response)}")
 
     result = response.json()
     print(
         f"Policy applied from {policy_path}. "
-        f"Updated {result.get('updated_rules', 0)} rule(s)."
+        f"Updated {result.get('updated_rules', 0)} rule(s), "
+        f"skipped {result.get('skipped_rules', 0)}."
     )
     return 0
 
@@ -356,6 +370,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Policy document format (default: json)",
     )
     apply_policy.set_defaults(func=cmd_apply_policy)
+
+    # Backward-compatible alias for older docs/scripts.
+    policy_apply = subparsers.add_parser("policy-apply", help="Alias for apply-policy")
+    policy_apply.add_argument("--file", required=True, help="Path to policy document file")
+    policy_apply.add_argument(
+        "--format",
+        choices=["json", "yaml"],
+        default="json",
+        help="Policy document format (default: json)",
+    )
+    policy_apply.set_defaults(func=cmd_apply_policy)
 
     return parser
 
