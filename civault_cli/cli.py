@@ -134,11 +134,6 @@ def cmd_login(args: argparse.Namespace) -> int:
     base_url = _base_url(args)
     session = requests.Session()
 
-    login_url = f"{base_url}/login/"
-    pre = session.get(login_url, timeout=20)
-    pre.raise_for_status()
-
-    csrf_token = session.cookies.get("csrftoken", "")
     payload: dict[str, str]
     if args.root_token:
         payload = {"auth_method": "root_token", "root_token": args.root_token}
@@ -151,16 +146,26 @@ def cmd_login(args: argparse.Namespace) -> int:
             "password": args.password,
         }
 
-    headers = {"Referer": login_url}
-    if csrf_token:
-        headers["X-CSRFToken"] = csrf_token
+    cli_login_url = f"{base_url}/login/cli/"
+    response = session.post(cli_login_url, json=payload, timeout=20, allow_redirects=False)
+    if response.status_code == 404:
+        login_url = f"{base_url}/login/"
+        pre = session.get(login_url, timeout=20)
+        pre.raise_for_status()
 
-    response = session.post(login_url, data=payload, headers=headers, timeout=20, allow_redirects=True)
-    response.raise_for_status()
+        csrf_token = session.cookies.get("csrftoken", "")
+        headers = {"Referer": login_url}
+        if csrf_token:
+            headers["X-CSRFToken"] = csrf_token
+
+        response = session.post(login_url, data=payload, headers=headers, timeout=20, allow_redirects=True)
+        response.raise_for_status()
+    elif response.status_code != 200:
+        raise CliError(f"Login failed: {_extract_error(response)}")
 
     authed, mode, details = _probe_auth(session, base_url)
     if not authed:
-        raise CliError("Login failed. Verify credentials and vault seal/auth state.")
+        raise CliError("Login failed. Verify credentials and that the vault is unsealed.")
 
     _save_session(session)
     user = details.get("user", "unknown")
@@ -268,6 +273,33 @@ def cmd_delete_secret(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_apply_policy(args: argparse.Namespace) -> int:
+    base_url, session = _authed_session(args)
+    policy_path = Path(args.file).expanduser()
+    if not policy_path.exists() or not policy_path.is_file():
+        raise CliError(f"Policy file not found: {policy_path}")
+
+    try:
+        policy_document = policy_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise CliError(f"Unable to read policy file: {exc}") from exc
+
+    payload = {
+        "policy_document": policy_document,
+        "document_format": args.format,
+    }
+    response = session.post(f"{base_url}/secrets/cli/policies/apply/", json=payload, timeout=20)
+    if response.status_code != 200:
+        raise CliError(f"Policy apply failed: {_extract_error(response)}")
+
+    result = response.json()
+    print(
+        f"Policy applied from {policy_path}. "
+        f"Updated {result.get('updated_rules', 0)} rule(s)."
+    )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="civault", description="civault CLI client")
     parser.add_argument("--url", help="Override configured vault URL for this command")
@@ -314,6 +346,16 @@ def build_parser() -> argparse.ArgumentParser:
     group.add_argument("--id", type=int)
     group.add_argument("--name")
     del_cmd.set_defaults(func=cmd_delete_secret)
+
+    apply_policy = subparsers.add_parser("apply-policy", help="Apply an access policy document")
+    apply_policy.add_argument("--file", required=True, help="Path to policy document file")
+    apply_policy.add_argument(
+        "--format",
+        choices=["json", "yaml"],
+        default="json",
+        help="Policy document format (default: json)",
+    )
+    apply_policy.set_defaults(func=cmd_apply_policy)
 
     return parser
 

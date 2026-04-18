@@ -1,5 +1,6 @@
 import base64
 import hmac
+import json
 import logging
 import os
 
@@ -9,8 +10,9 @@ from django.contrib.auth.models import User
 from django.contrib.auth.decorators import login_required
 from django.core.cache import cache
 from django.db import connections
-from django.http import HttpResponseForbidden
+from django.http import HttpResponseForbidden, JsonResponse
 from django.shortcuts import redirect, render
+from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
 from .crypto_utils import decrypt_root_key, encrypt_root_key
@@ -60,6 +62,11 @@ def _establish_authenticated_session(request, user, vault, root_key: bytes | Non
 def _authenticate_with_username_password(request, vault):
     username = (request.POST.get("username") or "").strip()
     password = request.POST.get("password")
+    return _authenticate_username_password(request, vault, username, password)
+
+
+def _authenticate_username_password(request, vault, username, password):
+    username = (username or "").strip()
 
     user = authenticate(request, username=username, password=password)
     if not user:
@@ -71,6 +78,11 @@ def _authenticate_with_username_password(request, vault):
 
 def _authenticate_with_root_token(request, vault):
     token = (request.POST.get("root_token") or "").strip()
+    return _authenticate_root_token(request, vault, token)
+
+
+def _authenticate_root_token(request, vault, token):
+    token = (token or "").strip()
     if not token:
         return None, "Root token is required."
 
@@ -89,6 +101,45 @@ def _authenticate_with_root_token(request, vault):
 
     _establish_authenticated_session(request, root_user, vault, root_key=expected_root_key)
     return root_user, None
+
+
+@csrf_exempt
+@require_POST
+def cli_login(request):
+    vault = VaultConfig.objects.first()
+    if not vault:
+        return JsonResponse({"ok": False, "error": "Vault is not initialized."}, status=503)
+    if vault.is_sealed:
+        return JsonResponse({"ok": False, "error": "Vault is sealed. Unseal before login."}, status=423)
+
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+    except Exception:
+        payload = request.POST
+
+    auth_method = payload.get("auth_method", AUTH_METHOD_USERNAME_PASSWORD)
+    if auth_method == AUTH_METHOD_ROOT_TOKEN:
+        user, error = _authenticate_root_token(request, vault, payload.get("root_token"))
+    elif auth_method == AUTH_METHOD_USERNAME_PASSWORD:
+        user, error = _authenticate_username_password(
+            request,
+            vault,
+            payload.get("username"),
+            payload.get("password"),
+        )
+    else:
+        return JsonResponse({"ok": False, "error": "Unsupported authentication method."}, status=400)
+
+    if not user:
+        return JsonResponse({"ok": False, "error": error or "Authentication failed."}, status=401)
+
+    return JsonResponse(
+        {
+            "ok": True,
+            "user": user.username,
+            "is_superuser": user.is_superuser,
+        }
+    )
 
 
 def home(request):
