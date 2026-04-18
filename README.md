@@ -13,6 +13,7 @@ This branch (`cli-package`) intentionally contains only the installable CLI pack
 - List secrets
 - Add secrets
 - Delete secrets
+- Apply access policies from JSON/YAML documents
 
 ## Installation
 
@@ -68,6 +69,39 @@ civault status
 civault list-secrets --environment prod --folder payments
 civault add-secret --environment prod --folder payments --name API_KEY --value supersecret
 civault delete-secret --environment prod --folder payments --name API_KEY
+```
+
+### 5) Apply policy document
+
+Create a policy file (JSON):
+
+```json
+{
+  "rules": [
+    {
+      "user": "alice",
+      "environment": "prod",
+      "folder": "payments",
+      "permissions": {
+        "read": true,
+        "write": false,
+        "delete": false
+      }
+    }
+  ]
+}
+```
+
+Apply it:
+
+```bash
+civault policy-apply --file ./policy.json
+```
+
+Or YAML:
+
+```bash
+civault policy-apply --file ./policy.yaml --format yaml
 ```
 
 ## Local config/session files

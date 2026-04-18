@@ -8,10 +8,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import mimetypes
 from pathlib import Path
 from typing import Any
 
 import requests
+import yaml
 
 APP_NAME = "civault"
 CONFIG_DIR = Path.home() / ".civault"
@@ -228,6 +230,74 @@ def cmd_delete_secret(args: argparse.Namespace) -> int:
     return 0
 
 
+def _load_policy_document(path: Path, doc_format: str | None) -> tuple[str, str]:
+    if not path.exists():
+        raise CliError(f"Policy file not found: {path}")
+
+    raw = path.read_text(encoding="utf-8").strip()
+    if not raw:
+        raise CliError("Policy file is empty.")
+
+    fmt = (doc_format or "").strip().lower()
+    if not fmt:
+        guessed_mime, _ = mimetypes.guess_type(path.name)
+        if path.suffix.lower() in {".yaml", ".yml"} or guessed_mime in {"application/yaml", "text/yaml"}:
+            fmt = "yaml"
+        else:
+            fmt = "json"
+
+    if fmt not in {"json", "yaml"}:
+        raise CliError("Unsupported policy format. Use --format json|yaml.")
+
+    try:
+        parsed = json.loads(raw) if fmt == "json" else yaml.safe_load(raw)
+    except Exception as exc:
+        raise CliError(f"Invalid {fmt.upper()} policy document: {exc}") from exc
+
+    rules = parsed.get("rules") if isinstance(parsed, dict) else None
+    if not isinstance(rules, list):
+        raise CliError("Policy document must contain a top-level 'rules' list.")
+
+    return raw, fmt
+
+
+def cmd_policy_apply(args: argparse.Namespace) -> int:
+    base_url, session = _authed_session(args)
+    raw, doc_format = _load_policy_document(Path(args.file), args.format)
+
+    endpoint = args.endpoint.strip() if args.endpoint else "/secrets/policy-engine/save-document/"
+    if not endpoint.startswith("/"):
+        endpoint = "/" + endpoint
+    apply_url = f"{base_url}{endpoint}"
+
+    headers = {"Referer": f"{base_url}/secrets/"}
+    csrf_token = session.cookies.get("csrftoken", "")
+    if csrf_token:
+        headers["X-CSRFToken"] = csrf_token
+
+    response = session.post(
+        apply_url,
+        data={"policy_document": raw, "document_format": doc_format},
+        headers=headers,
+        timeout=20,
+        allow_redirects=False,
+    )
+
+    if response.status_code in {301, 302, 303, 307, 308}:
+        location = response.headers.get("Location", "")
+        print(
+            f"Policy apply request accepted (HTTP {response.status_code}). "
+            f"Server redirect: {location or '-'}"
+        )
+        return 0
+
+    if response.status_code == 200:
+        print("Policy apply request completed (HTTP 200).")
+        return 0
+
+    raise CliError(f"Policy apply failed: HTTP {response.status_code}: {_extract_error(response)}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="civault", description="civault CLI client")
     parser.add_argument("--url", help="Override configured vault URL for this command")
@@ -274,6 +344,16 @@ def build_parser() -> argparse.ArgumentParser:
     group.add_argument("--id", type=int)
     group.add_argument("--name")
     del_cmd.set_defaults(func=cmd_delete_secret)
+
+    policy_apply = subparsers.add_parser("policy-apply", help="Apply policy rules from a JSON/YAML document")
+    policy_apply.add_argument("--file", required=True, help="Path to policy document file")
+    policy_apply.add_argument("--format", choices=["json", "yaml"], help="Explicit document format")
+    policy_apply.add_argument(
+        "--endpoint",
+        default="/secrets/policy-engine/save-document/",
+        help="Server endpoint path for policy apply",
+    )
+    policy_apply.set_defaults(func=cmd_policy_apply)
 
     return parser
 

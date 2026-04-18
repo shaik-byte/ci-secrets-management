@@ -13,6 +13,7 @@ authors = [
 ]
 dependencies = [
   "requests>=2.31.0",
+  "PyYAML>=6.0.1",
 ]
 
 [project.scripts]
