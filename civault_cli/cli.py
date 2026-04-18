@@ -295,7 +295,8 @@ def cmd_apply_policy(args: argparse.Namespace) -> int:
     result = response.json()
     print(
         f"Policy applied from {policy_path}. "
-        f"Updated {result.get('updated_rules', 0)} rule(s)."
+        f"Updated {result.get('updated_rules', 0)} rule(s), "
+        f"skipped {result.get('skipped_rules', 0)}."
     )
     return 0
 
