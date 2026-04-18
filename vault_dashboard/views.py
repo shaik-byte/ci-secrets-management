@@ -238,46 +238,6 @@ def _manageable_environments_for_settings(user):
     return Environment.objects.filter(id__in=writable_ids)
 
 
-def _visible_environments_for_user(user):
-    environments = Environment.objects.select_related("created_by").prefetch_related("folders__secrets").all()
-    visible_environments = []
-
-    for env in environments:
-        all_folders = list(env.folders.all())
-        if user.is_superuser or env.created_by_id == user.id:
-            for folder in all_folders:
-                folder.visible_secrets = list(folder.secrets.all())
-            env.visible_folders = all_folders
-            visible_environments.append(env)
-            continue
-
-        env_has_read_access = _has_access(user, "read", environment=env)
-        if env_has_read_access:
-            for folder in all_folders:
-                folder.visible_secrets = list(folder.secrets.all())
-            env.visible_folders = all_folders
-            visible_environments.append(env)
-            continue
-
-        visible_folders = []
-        for folder in all_folders:
-            if _has_access(user, "read", folder=folder):
-                folder.visible_secrets = list(folder.secrets.all())
-                visible_folders.append(folder)
-                continue
-
-            readable_secrets = [secret for secret in folder.secrets.all() if _has_access(user, "read", secret=secret)]
-            if readable_secrets:
-                folder.visible_secrets = readable_secrets
-                visible_folders.append(folder)
-
-        if visible_folders:
-            env.visible_folders = visible_folders
-            visible_environments.append(env)
-
-    return visible_environments
-
-
 def _access_policy_sync_state():
     aggregate = AccessPolicy.objects.aggregate(last_updated_at=Max("updated_at"), rule_count=Count("id"))
     last_updated_at = aggregate.get("last_updated_at")
