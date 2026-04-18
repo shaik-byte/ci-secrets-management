@@ -322,6 +322,7 @@ def dashboard(request):
                 env.visible_folders = list(env.folders.all())
                 for folder in env.visible_folders:
                     folder.visible_secrets = list(folder.secrets.all())
+    environments = _visible_environments_for_user(request.user)
     policy, _ = SecretPolicy.objects.get_or_create(created_by=request.user)
     policy_presets = [
         {
