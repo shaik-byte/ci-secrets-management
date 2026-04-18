@@ -103,6 +103,51 @@
             overflow-x: auto;
         }
 
+        .content-area .container {
+            max-width: 100%;
+            width: 100%;
+            padding-left: 1.1rem;
+            padding-right: 1.1rem;
+        }
+
+        .sidebar-toggle-btn {
+            width: 22px;
+            height: 22px;
+            padding: 0;
+            border-radius: 2px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid rgba(255, 255, 255, 0.45);
+            background: rgba(15, 23, 42, 0.55);
+            color: #f8fafc;
+            font-size: 0.9rem;
+            font-weight: 700;
+            line-height: 1;
+        }
+
+        .sidebar-toggle-btn:hover {
+            background: rgba(30, 41, 59, 0.85);
+            border-color: rgba(255, 255, 255, 0.7);
+            color: #ffffff;
+        }
+
+        .sidebar-toggle-btn:focus-visible {
+            box-shadow: 0 0 0 0.15rem rgba(148, 197, 255, 0.35);
+        }
+
+        body.sidebar-collapsed .sidebar {
+            width: 0;
+            padding-left: 0;
+            padding-right: 0;
+            border-right: 0;
+            overflow: hidden;
+        }
+
+        body.sidebar-collapsed .content-area {
+            width: 100%;
+        }
+
         .policy-doc-editor {
             background-color: #000 !important;
             color: #fff !important;
@@ -267,7 +312,7 @@
     window.__SESSION_STATE__ = JSON.parse(document.getElementById("session-state-data").textContent);
 </script>
 
-<div class="app-shell">
+<div id="app-shell" class="app-shell">
     <aside class="sidebar">
         <div class="sidebar-title">Dashboard</div>
         <button id="nav-dashboard" class="sidebar-item active" type="button" onclick="showSection('dashboard')">
@@ -308,7 +353,20 @@
     <main class="content-area">
 <div class="container mt-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2 id="page-title">Dashboard</h2>
+        <div class="d-flex align-items-center gap-2">
+            <button
+                id="sidebar-toggle-btn"
+                type="button"
+                class="btn btn-sm sidebar-toggle-btn"
+                aria-expanded="true"
+                aria-controls="app-shell"
+                aria-label="Collapse sidebar"
+                title="Collapse sidebar"
+            >
+                ←
+            </button>
+            <h2 id="page-title" class="mb-0">Dashboard</h2>
+        </div>
 
         <div class="d-flex align-items-center gap-3">
             <span class="badge rounded-pill text-bg-light" title="Logged in user">
@@ -1851,6 +1909,35 @@ function showSection(section, options = {}) {
     }
 }
 
+function getSidebarCollapsedPreference() {
+    return localStorage.getItem("vault_sidebar_collapsed") === "true";
+}
+
+function updateSidebarToggleState(collapsed) {
+    document.body.classList.toggle("sidebar-collapsed", collapsed);
+    const sidebarToggleBtn = document.getElementById("sidebar-toggle-btn");
+    if (!sidebarToggleBtn) return;
+    sidebarToggleBtn.textContent = collapsed ? "→" : "←";
+    sidebarToggleBtn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    sidebarToggleBtn.setAttribute("aria-label", collapsed ? "Expand sidebar" : "Collapse sidebar");
+    sidebarToggleBtn.title = collapsed ? "Expand sidebar" : "Collapse sidebar";
+}
+
+function initializeSidebarToggle() {
+    const sidebarToggleBtn = document.getElementById("sidebar-toggle-btn");
+    if (!sidebarToggleBtn) return;
+
+    updateSidebarToggleState(getSidebarCollapsedPreference());
+    if (sidebarToggleBtn.dataset.bound === "true") return;
+
+    sidebarToggleBtn.dataset.bound = "true";
+    sidebarToggleBtn.addEventListener("click", function () {
+        const collapsed = !document.body.classList.contains("sidebar-collapsed");
+        localStorage.setItem("vault_sidebar_collapsed", collapsed ? "true" : "false");
+        updateSidebarToggleState(collapsed);
+    });
+}
+
 async function copyRootToken() {
     const feedback = document.getElementById("root-token-feedback");
     const copyButton = document.getElementById("copy-root-token-btn");
@@ -1904,6 +1991,7 @@ async function copyRootToken() {
 
 document.addEventListener("DOMContentLoaded", function () {
     startVaultHeartbeat();
+    initializeSidebarToggle();
 
     const requestedSection = new URLSearchParams(window.location.search).get("section");
     const savedSection = localStorage.getItem("vault_active_section");
@@ -1948,6 +2036,7 @@ async function refreshContentArea(sectionName = "secrets") {
     const currentContent = document.querySelector(".content-area");
     if (newContent && currentContent) {
         currentContent.innerHTML = newContent.innerHTML;
+        initializeSidebarToggle();
         showSection(sectionName, { updateUrl: false });
         clearModalArtifacts();
     }
@@ -2827,7 +2916,6 @@ function attachSecretRegexValidation() {
     });
 }
 
-showSection("dashboard");
 attachSecretRegexValidation();
 document.getElementById("secret-path-search-form")?.addEventListener("submit", searchSecretPaths);
 document.getElementById("secret-path-query")?.addEventListener("input", handleSecretPathQueryInput);
