@@ -111,8 +111,29 @@
         }
 
         .sidebar-toggle-btn {
-            min-width: 116px;
-            font-weight: 600;
+            width: 22px;
+            height: 22px;
+            padding: 0;
+            border-radius: 2px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid rgba(255, 255, 255, 0.45);
+            background: rgba(15, 23, 42, 0.55);
+            color: #f8fafc;
+            font-size: 0.9rem;
+            font-weight: 700;
+            line-height: 1;
+        }
+
+        .sidebar-toggle-btn:hover {
+            background: rgba(30, 41, 59, 0.85);
+            border-color: rgba(255, 255, 255, 0.7);
+            color: #ffffff;
+        }
+
+        .sidebar-toggle-btn:focus-visible {
+            box-shadow: 0 0 0 0.15rem rgba(148, 197, 255, 0.35);
         }
 
         body.sidebar-collapsed .sidebar {
@@ -333,8 +354,16 @@
 <div class="container mt-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div class="d-flex align-items-center gap-2">
-            <button id="sidebar-toggle-btn" type="button" class="btn btn-outline-light btn-sm sidebar-toggle-btn" aria-expanded="true" aria-controls="app-shell">
-                Hide Menu
+            <button
+                id="sidebar-toggle-btn"
+                type="button"
+                class="btn btn-sm sidebar-toggle-btn"
+                aria-expanded="true"
+                aria-controls="app-shell"
+                aria-label="Collapse sidebar"
+                title="Collapse sidebar"
+            >
+                ←
             </button>
             <h2 id="page-title" class="mb-0">Dashboard</h2>
         </div>
@@ -1938,8 +1967,10 @@ document.addEventListener("DOMContentLoaded", function () {
     const updateSidebarToggleState = (collapsed) => {
         document.body.classList.toggle("sidebar-collapsed", collapsed);
         if (sidebarToggleBtn) {
-            sidebarToggleBtn.textContent = collapsed ? "Show Menu" : "Hide Menu";
+            sidebarToggleBtn.textContent = collapsed ? "→" : "←";
             sidebarToggleBtn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+            sidebarToggleBtn.setAttribute("aria-label", collapsed ? "Expand sidebar" : "Collapse sidebar");
+            sidebarToggleBtn.title = collapsed ? "Expand sidebar" : "Collapse sidebar";
         }
     };
 
