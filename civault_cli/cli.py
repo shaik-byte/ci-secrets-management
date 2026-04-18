@@ -134,11 +134,6 @@ def cmd_login(args: argparse.Namespace) -> int:
     base_url = _base_url(args)
     session = requests.Session()
 
-    login_url = f"{base_url}/login/"
-    pre = session.get(login_url, timeout=20)
-    pre.raise_for_status()
-
-    csrf_token = session.cookies.get("csrftoken", "")
     payload: dict[str, str]
     if args.root_token:
         payload = {"auth_method": "root_token", "root_token": args.root_token}
@@ -151,16 +146,26 @@ def cmd_login(args: argparse.Namespace) -> int:
             "password": args.password,
         }
 
-    headers = {"Referer": login_url}
-    if csrf_token:
-        headers["X-CSRFToken"] = csrf_token
+    cli_login_url = f"{base_url}/login/cli/"
+    response = session.post(cli_login_url, json=payload, timeout=20, allow_redirects=False)
+    if response.status_code == 404:
+        login_url = f"{base_url}/login/"
+        pre = session.get(login_url, timeout=20)
+        pre.raise_for_status()
 
-    response = session.post(login_url, data=payload, headers=headers, timeout=20, allow_redirects=True)
-    response.raise_for_status()
+        csrf_token = session.cookies.get("csrftoken", "")
+        headers = {"Referer": login_url}
+        if csrf_token:
+            headers["X-CSRFToken"] = csrf_token
+
+        response = session.post(login_url, data=payload, headers=headers, timeout=20, allow_redirects=True)
+        response.raise_for_status()
+    elif response.status_code != 200:
+        raise CliError(f"Login failed: {_extract_error(response)}")
 
     authed, mode, details = _probe_auth(session, base_url)
     if not authed:
-        raise CliError("Login failed. Verify credentials and vault seal/auth state.")
+        raise CliError("Login failed. Verify credentials and that the vault is unsealed.")
 
     _save_session(session)
     user = details.get("user", "unknown")
