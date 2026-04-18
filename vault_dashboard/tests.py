@@ -157,3 +157,4 @@ class AccessScopeVisibilityTests(TestCase):
         with patch.dict(dashboard_views.__dict__, {"_visible_environments_for_user": None}):
             response = self.client.get("/secrets/")
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 200)

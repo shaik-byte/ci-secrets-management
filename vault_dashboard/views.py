@@ -322,6 +322,7 @@ def dashboard(request):
                 env.visible_folders = list(env.folders.all())
                 for folder in env.visible_folders:
                     folder.visible_secrets = list(folder.secrets.all())
+    environments = _visible_environments_for_user(request.user)
     policy, _ = SecretPolicy.objects.get_or_create(created_by=request.user)
     policy_presets = [
         {
@@ -1810,6 +1811,8 @@ def _apply_access_policy_rules(rules):
             environment_matches = Environment.objects.filter(name__iexact=environment_name)
             if environment_matches.count() != 1:
                 skipped += 1
+            environment_matches = Environment.objects.filter(name=environment_name)
+            if environment_matches.count() != 1:
                 continue
             environment = environment_matches.first()
 
@@ -1820,12 +1823,17 @@ def _apply_access_policy_rules(rules):
                 folder_matches = folder_matches.filter(environment=environment)
             if folder_matches.count() != 1:
                 skipped += 1
+            folder_matches = Folder.objects.filter(name=folder_name)
+            if environment:
+                folder_matches = folder_matches.filter(environment=environment)
+            if folder_matches.count() != 1:
                 continue
             folder = folder_matches.first()
 
         secret = None
         if secret_name:
             secret_matches = Secret.objects.filter(name__iexact=secret_name)
+            secret_matches = Secret.objects.filter(name=secret_name)
             if folder:
                 secret_matches = secret_matches.filter(folder=folder)
             elif environment:
@@ -2089,6 +2097,22 @@ def cli_apply_policy(request):
     )
 
     return JsonResponse({"ok": True, "vault": "civault", "updated_rules": updated, "skipped_rules": skipped})
+
+
+@csrf_exempt
+@login_required
+@require_GET
+def cli_policy_sync_state(request):
+    sync_state = _access_policy_sync_state()
+    return JsonResponse(
+        {
+            "ok": True,
+            "vault": "civault",
+            "policy_sync_token": sync_state["token"],
+            "rule_count": sync_state["rule_count"],
+            "last_updated_at": sync_state["last_updated_at"],
+        }
+    )
 
 
 @csrf_exempt
