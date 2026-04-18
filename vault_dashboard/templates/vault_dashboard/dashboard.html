@@ -1909,6 +1909,35 @@ function showSection(section, options = {}) {
     }
 }
 
+function getSidebarCollapsedPreference() {
+    return localStorage.getItem("vault_sidebar_collapsed") === "true";
+}
+
+function updateSidebarToggleState(collapsed) {
+    document.body.classList.toggle("sidebar-collapsed", collapsed);
+    const sidebarToggleBtn = document.getElementById("sidebar-toggle-btn");
+    if (!sidebarToggleBtn) return;
+    sidebarToggleBtn.textContent = collapsed ? "→" : "←";
+    sidebarToggleBtn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    sidebarToggleBtn.setAttribute("aria-label", collapsed ? "Expand sidebar" : "Collapse sidebar");
+    sidebarToggleBtn.title = collapsed ? "Expand sidebar" : "Collapse sidebar";
+}
+
+function initializeSidebarToggle() {
+    const sidebarToggleBtn = document.getElementById("sidebar-toggle-btn");
+    if (!sidebarToggleBtn) return;
+
+    updateSidebarToggleState(getSidebarCollapsedPreference());
+    if (sidebarToggleBtn.dataset.bound === "true") return;
+
+    sidebarToggleBtn.dataset.bound = "true";
+    sidebarToggleBtn.addEventListener("click", function () {
+        const collapsed = !document.body.classList.contains("sidebar-collapsed");
+        localStorage.setItem("vault_sidebar_collapsed", collapsed ? "true" : "false");
+        updateSidebarToggleState(collapsed);
+    });
+}
+
 async function copyRootToken() {
     const feedback = document.getElementById("root-token-feedback");
     const copyButton = document.getElementById("copy-root-token-btn");
@@ -1962,27 +1991,7 @@ async function copyRootToken() {
 
 document.addEventListener("DOMContentLoaded", function () {
     startVaultHeartbeat();
-
-    const sidebarToggleBtn = document.getElementById("sidebar-toggle-btn");
-    const updateSidebarToggleState = (collapsed) => {
-        document.body.classList.toggle("sidebar-collapsed", collapsed);
-        if (sidebarToggleBtn) {
-            sidebarToggleBtn.textContent = collapsed ? "→" : "←";
-            sidebarToggleBtn.setAttribute("aria-expanded", collapsed ? "false" : "true");
-            sidebarToggleBtn.setAttribute("aria-label", collapsed ? "Expand sidebar" : "Collapse sidebar");
-            sidebarToggleBtn.title = collapsed ? "Expand sidebar" : "Collapse sidebar";
-        }
-    };
-
-    const savedSidebarState = localStorage.getItem("vault_sidebar_collapsed");
-    updateSidebarToggleState(savedSidebarState === "true");
-    if (sidebarToggleBtn) {
-        sidebarToggleBtn.addEventListener("click", function () {
-            const collapsed = !document.body.classList.contains("sidebar-collapsed");
-            updateSidebarToggleState(collapsed);
-            localStorage.setItem("vault_sidebar_collapsed", collapsed ? "true" : "false");
-        });
-    }
+    initializeSidebarToggle();
 
     const requestedSection = new URLSearchParams(window.location.search).get("section");
     const savedSection = localStorage.getItem("vault_active_section");
@@ -2027,6 +2036,7 @@ async function refreshContentArea(sectionName = "secrets") {
     const currentContent = document.querySelector(".content-area");
     if (newContent && currentContent) {
         currentContent.innerHTML = newContent.innerHTML;
+        initializeSidebarToggle();
         showSection(sectionName, { updateUrl: false });
         clearModalArtifacts();
     }
