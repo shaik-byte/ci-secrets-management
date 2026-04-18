@@ -47,4 +47,5 @@ urlpatterns = [
     path('cli/secrets/add/', views.cli_add_secret, name="cli_add_secret"),
     path('cli/secrets/delete/', views.cli_delete_secret, name="cli_delete_secret"),
     path('cli/policies/apply/', views.cli_apply_policy, name="cli_apply_policy"),
+    path('cli/policies/sync-state/', views.cli_policy_sync_state, name="cli_policy_sync_state"),
 ]

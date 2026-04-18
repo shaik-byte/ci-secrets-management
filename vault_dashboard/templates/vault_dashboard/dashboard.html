@@ -1796,6 +1796,7 @@
 <script>
 let vaultUnavailableLocked = false;
 const nativeFetch = window.fetch.bind(window);
+let accessPolicySyncToken = "{{ access_policy_sync_token|default:''|escapejs }}";
 
 function lockVaultUi(message) {
     if (vaultUnavailableLocked) return;
@@ -1846,6 +1847,34 @@ function startVaultHeartbeat() {
     };
     heartbeat();
     setInterval(heartbeat, 10000);
+}
+
+function startAccessPolicySyncPolling() {
+    const poll = async () => {
+        if (vaultUnavailableLocked) return;
+        try {
+            const response = await nativeFetch("/secrets/cli/policies/sync-state/", {
+                method: "GET",
+                credentials: "same-origin",
+                headers: { "X-Requested-With": "XMLHttpRequest" },
+                cache: "no-store",
+            });
+            if (!response.ok) return;
+
+            const payload = await response.json();
+            const nextToken = payload?.policy_sync_token || "";
+            if (!nextToken || nextToken === accessPolicySyncToken) return;
+
+            accessPolicySyncToken = nextToken;
+            const currentSection = localStorage.getItem("vault_active_section") || "dashboard";
+            await refreshContentArea(currentSection);
+        } catch (_) {
+            // Keep polling silently; vault heartbeat handles connectivity issues and redirects.
+        }
+    };
+
+    poll();
+    setInterval(poll, 5000);
 }
 
 function showSection(section, options = {}) {
@@ -1991,6 +2020,7 @@ async function copyRootToken() {
 
 document.addEventListener("DOMContentLoaded", function () {
     startVaultHeartbeat();
+    startAccessPolicySyncPolling();
     initializeSidebarToggle();
 
     const requestedSection = new URLSearchParams(window.location.search).get("section");

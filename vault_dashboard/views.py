@@ -139,7 +139,7 @@ from django.contrib import messages
 from django.http import JsonResponse, HttpResponseForbidden
 from django.contrib.auth.models import User
 from django.core.cache import cache
-from django.db.models import Q, Count, Avg
+from django.db.models import Q, Count, Avg, Max
 from django.db import transaction
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
@@ -238,6 +238,18 @@ def _manageable_environments_for_settings(user):
     return Environment.objects.filter(id__in=writable_ids)
 
 
+def _access_policy_sync_state():
+    aggregate = AccessPolicy.objects.aggregate(last_updated_at=Max("updated_at"), rule_count=Count("id"))
+    last_updated_at = aggregate.get("last_updated_at")
+    rule_count = aggregate.get("rule_count") or 0
+    token = f"{last_updated_at.isoformat() if last_updated_at else 'none'}:{rule_count}"
+    return {
+        "token": token,
+        "last_updated_at": last_updated_at.isoformat() if last_updated_at else None,
+        "rule_count": rule_count,
+    }
+
+
 @login_required
 def dashboard(request):
 
@@ -331,6 +343,7 @@ def dashboard(request):
             "extra_count": max(len(readable) - 15, 0),
         })
 
+    policy_sync_state = _access_policy_sync_state()
     return render(request, "vault_dashboard/dashboard.html", {
         "environments": environments,
         "secret_policy": policy,
@@ -359,6 +372,7 @@ def dashboard(request):
         "can_view_analysis": "analysis" in visible_feature_keys,
         "feature_rows": feature_rows,
         "setting_environments": _manageable_environments_for_settings(request.user).order_by("name"),
+        "access_policy_sync_token": policy_sync_state["token"],
     })
 
 
@@ -1987,6 +2001,22 @@ def cli_apply_policy(request):
     )
 
     return JsonResponse({"ok": True, "vault": "civault", "updated_rules": updated})
+
+
+@csrf_exempt
+@login_required
+@require_GET
+def cli_policy_sync_state(request):
+    sync_state = _access_policy_sync_state()
+    return JsonResponse(
+        {
+            "ok": True,
+            "vault": "civault",
+            "policy_sync_token": sync_state["token"],
+            "rule_count": sync_state["rule_count"],
+            "last_updated_at": sync_state["last_updated_at"],
+        }
+    )
 
 
 @csrf_exempt
