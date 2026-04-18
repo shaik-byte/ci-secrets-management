@@ -388,13 +388,22 @@ def add_environment(request):
 # =========================
 @login_required
 def add_folder(request, env_id):
+    is_ajax = request.headers.get("x-requested-with") == "XMLHttpRequest"
     env = get_object_or_404(Environment, id=env_id)
     if not _has_access(request.user, "write", environment=env):
+        if is_ajax:
+            return JsonResponse({"ok": False, "error": "You do not have write access to this environment."}, status=403)
         return HttpResponseForbidden("You do not have write access to this environment.")
 
     if request.method == "POST":
-        name = request.POST.get("name")
+        name = (request.POST.get("name") or "").strip()
         owner_email = (request.POST.get("owner_email") or "").strip()
+        if not name:
+            error_message = "Folder name is required."
+            if is_ajax:
+                return JsonResponse({"ok": False, "error": error_message}, status=400)
+            messages.error(request, error_message)
+            return redirect("vault_dashboard")
 
         folder = Folder.objects.create(name=name, owner_email=owner_email, environment=env)
 
@@ -405,7 +414,18 @@ def add_folder(request, env_id):
             details=f"Created folder '{name}' in environment '{env.name}'",
             ip_address=get_client_ip(request)
         )
+        if is_ajax:
+            return JsonResponse({
+                "ok": True,
+                "folder": {
+                    "id": folder.id,
+                    "name": folder.name,
+                    "owner_email": folder.owner_email or "",
+                }
+            })
 
+    if is_ajax:
+        return JsonResponse({"ok": False, "error": "Invalid request method."}, status=405)
     return redirect("vault_dashboard")
 
 
@@ -414,15 +434,31 @@ def add_folder(request, env_id):
 # =========================
 @login_required
 def add_secret(request, folder_id):
+    is_ajax = request.headers.get("x-requested-with") == "XMLHttpRequest"
     folder = get_object_or_404(Folder, id=folder_id)
     if not _has_access(request.user, "write", folder=folder):
+        if is_ajax:
+            return JsonResponse({"ok": False, "error": "You do not have write access to this folder."}, status=403)
         return HttpResponseForbidden("You do not have write access to this folder.")
 
     if request.method == "POST":
-        name = request.POST.get("name")
+        name = (request.POST.get("name") or "").strip()
         service_name = (request.POST.get("service_name") or "").strip()
         value = request.POST.get("value")
         expire = request.POST.get("expire")
+
+        if not name:
+            error_message = "Secret name is required."
+            if is_ajax:
+                return JsonResponse({"ok": False, "error": error_message}, status=400)
+            messages.error(request, error_message)
+            return redirect("vault_dashboard")
+        if not value:
+            error_message = "Secret value is required."
+            if is_ajax:
+                return JsonResponse({"ok": False, "error": error_message}, status=400)
+            messages.error(request, error_message)
+            return redirect("vault_dashboard")
 
         fallback_policy = SecretPolicy.objects.filter(created_by=request.user).first()
         env_policy = EnvironmentSecretPolicy.objects.filter(environment=folder.environment).first()
@@ -435,14 +471,23 @@ def add_secret(request, folder_id):
                 is_match = bool(re.fullmatch(regex_pattern, value or ""))
 
                 if regex_mode == "match" and not is_match:
-                    messages.error(request, "Secret should match the configured regex policy.")
+                    error_message = "Secret should match the configured regex policy."
+                    if is_ajax:
+                        return JsonResponse({"ok": False, "error": error_message}, status=400)
+                    messages.error(request, error_message)
                     return redirect("vault_dashboard")
 
                 if regex_mode == "not_match" and is_match:
-                    messages.error(request, "Secret should not match the configured regex policy.")
+                    error_message = "Secret should not match the configured regex policy."
+                    if is_ajax:
+                        return JsonResponse({"ok": False, "error": error_message}, status=400)
+                    messages.error(request, error_message)
                     return redirect("vault_dashboard")
             except re.error:
-                messages.error(request, "Configured regex policy is invalid. Please update Settings.")
+                error_message = "Configured regex policy is invalid. Please update Settings."
+                if is_ajax:
+                    return JsonResponse({"ok": False, "error": error_message}, status=400)
+                messages.error(request, error_message)
                 return redirect("vault_dashboard")
 
         encrypted = encrypt_value(request, value)
@@ -462,7 +507,19 @@ def add_secret(request, folder_id):
             details=f"Created secret '{name}' in folder '{folder.name}'",
             ip_address=get_client_ip(request)
         )
+        if is_ajax:
+            return JsonResponse({
+                "ok": True,
+                "secret": {
+                    "id": secret.id,
+                    "name": secret.name,
+                    "service_name": secret.service_name or "",
+                    "expire_date": secret.expire_date.isoformat() if secret.expire_date else "",
+                }
+            })
 
+    if is_ajax:
+        return JsonResponse({"ok": False, "error": "Invalid request method."}, status=405)
     return redirect("vault_dashboard")
 
 
@@ -975,6 +1032,76 @@ def toggle_secret_access(request, secret_id):
         ip_address=get_client_ip(request)
     )
 
+    return redirect("vault_dashboard")
+
+
+@login_required
+def update_secret_value(request, secret_id):
+    is_ajax = request.headers.get("x-requested-with") == "XMLHttpRequest"
+
+    if request.method != "POST":
+        if is_ajax:
+            return JsonResponse({"ok": False, "error": "Invalid request method."}, status=405)
+        return HttpResponseForbidden("Invalid request method")
+
+    secret = get_object_or_404(Secret, id=secret_id)
+    if not _has_access(request.user, "write", secret=secret):
+        if is_ajax:
+            return JsonResponse({"ok": False, "error": "You do not have write access to this secret."}, status=403)
+        return HttpResponseForbidden("You do not have write access to this secret.")
+
+    new_value = request.POST.get("value")
+    if not new_value:
+        error_message = "Please provide a new secret value."
+        if is_ajax:
+            return JsonResponse({"ok": False, "error": error_message}, status=400)
+        messages.error(request, error_message)
+        return redirect("vault_dashboard")
+
+    fallback_policy = SecretPolicy.objects.filter(created_by=request.user).first()
+    env_policy = EnvironmentSecretPolicy.objects.filter(environment=secret.folder.environment).first()
+    policy = env_policy if (env_policy and env_policy.secret_value_regex) else fallback_policy
+    regex_pattern = policy.secret_value_regex.strip() if policy else ""
+    regex_mode = policy.regex_mode if policy else "match"
+
+    if regex_pattern:
+        try:
+            is_match = bool(re.fullmatch(regex_pattern, new_value))
+
+            if regex_mode == "match" and not is_match:
+                error_message = "Secret should match the configured regex policy."
+                if is_ajax:
+                    return JsonResponse({"ok": False, "error": error_message}, status=400)
+                messages.error(request, error_message)
+                return redirect("vault_dashboard")
+
+            if regex_mode == "not_match" and is_match:
+                error_message = "Secret should not match the configured regex policy."
+                if is_ajax:
+                    return JsonResponse({"ok": False, "error": error_message}, status=400)
+                messages.error(request, error_message)
+                return redirect("vault_dashboard")
+        except re.error:
+            error_message = "Configured regex policy is invalid. Please update Settings."
+            if is_ajax:
+                return JsonResponse({"ok": False, "error": error_message}, status=400)
+            messages.error(request, error_message)
+            return redirect("vault_dashboard")
+
+    secret.encrypted_value = encrypt_value(request, new_value)
+    secret.save(update_fields=["encrypted_value"])
+
+    AuditLog.objects.create(
+        user=request.user,
+        action='UPDATE',
+        entity='Secret',
+        details=f"Updated value for secret '{secret.name}'",
+        ip_address=get_client_ip(request)
+    )
+    success_message = f"Updated value for secret '{secret.name}'."
+    if is_ajax:
+        return JsonResponse({"ok": True, "message": success_message})
+    messages.success(request, success_message)
     return redirect("vault_dashboard")
 
 

@@ -1474,7 +1474,9 @@
                     <!-- ADD FOLDER -->
                     <form method="POST"
                           action="{% url 'add_folder' env.id %}"
-                          class="row g-2 mb-3 folder-create-form align-items-center">
+                          class="row g-2 mb-3 folder-create-form align-items-center"
+                          data-env-id="{{ env.id }}"
+                          data-no-ajax="true">
                         {% csrf_token %}
                         <div class="col-md-5">
                             <input type="text" name="name" class="form-control" placeholder="Folder Name" required>
@@ -1560,6 +1562,8 @@
                                     <form method="POST"
                                           action="{% url 'add_secret' folder.id %}"
                                           class="row g-2 mb-3 secret-form"
+                                          data-folder-id="{{ folder.id }}"
+                                          data-no-ajax="true"
                                           data-secret-regex="{{ env.secret_value_regex|default:''|escapejs }}"
                                           data-regex-mode="{{ env.regex_mode|default:'match' }}">
                                         {% csrf_token %}
@@ -1617,12 +1621,11 @@
                                                     </button>
 
                                                     {% if request.user.is_superuser %}
-                                                    <form method="POST" action="{% url 'toggle_secret_access' secret.id %}">
-                                                        {% csrf_token %}
-                                                        <button type="submit" class="btn btn-outline-danger btn-sm">
-                                                            {% if secret.is_access_enabled %}Disable Access{% else %}Enable Access{% endif %}
-                                                        </button>
-                                                    </form>
+                                                    <button class="btn btn-outline-danger btn-sm"
+                                                            data-bs-toggle="modal"
+                                                            data-bs-target="#editSecretModal{{ secret.id }}">
+                                                        Edit Value
+                                                    </button>
                                                     {% endif %}
                                                 </td>
                                             </tr>
@@ -1662,6 +1665,38 @@
                                                     </div>
                                                 </div>
                                             </div>
+
+                                            {% if request.user.is_superuser %}
+                                            <div class="modal fade" id="editSecretModal{{ secret.id }}" tabindex="-1">
+                                                <div class="modal-dialog modal-dialog-centered">
+                                                    <div class="modal-content">
+                                                        <div class="modal-header">
+                                                            <h5 class="modal-title">Edit Secret Value</h5>
+                                                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                                        </div>
+                                                        <form method="POST"
+                                                              action="{% url 'update_secret_value' secret.id %}"
+                                                              class="edit-secret-form"
+                                                              data-no-ajax="true">
+                                                            {% csrf_token %}
+                                                            <div class="modal-body">
+                                                                <p class="mb-2 small text-muted">Enter a new value for <strong>{{ secret.name }}</strong>. The existing value is not shown.</p>
+                                                                <input type="password"
+                                                                       name="value"
+                                                                       class="form-control"
+                                                                       placeholder="Enter new secret value"
+                                                                       autocomplete="new-password"
+                                                                       required>
+                                                            </div>
+                                                            <div class="modal-footer">
+                                                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                                <button type="submit" class="btn btn-danger">Update Value</button>
+                                                            </div>
+                                                        </form>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            {% endif %}
 
                                         {% empty %}
                                             <tr>
@@ -1918,6 +1953,46 @@ async function refreshContentArea(sectionName = "secrets") {
     }
 }
 
+async function refreshEnvironmentSection(envId) {
+    if (!envId) return;
+    const response = await fetch(window.location.href, {
+        headers: { "X-Requested-With": "XMLHttpRequest" },
+        credentials: "same-origin",
+    });
+    const html = await response.text();
+    const parsed = new DOMParser().parseFromString(html, "text/html");
+    const newBody = parsed.querySelector(`#collapseEnv${envId} .accordion-body`);
+    const currentBody = document.querySelector(`#collapseEnv${envId} .accordion-body`);
+    if (!newBody || !currentBody) return;
+
+    currentBody.innerHTML = newBody.innerHTML;
+    const envPanel = document.getElementById(`collapseEnv${envId}`);
+    if (envPanel) {
+        envPanel.classList.add("show");
+    }
+    attachSecretRegexValidation();
+}
+
+async function refreshFolderSection(folderId) {
+    if (!folderId) return;
+    const response = await fetch(window.location.href, {
+        headers: { "X-Requested-With": "XMLHttpRequest" },
+        credentials: "same-origin",
+    });
+    const html = await response.text();
+    const parsed = new DOMParser().parseFromString(html, "text/html");
+    const newBody = parsed.querySelector(`#collapseFolder${folderId} .accordion-body`);
+    const currentBody = document.querySelector(`#collapseFolder${folderId} .accordion-body`);
+    if (!newBody || !currentBody) return;
+
+    currentBody.innerHTML = newBody.innerHTML;
+    const folderPanel = document.getElementById(`collapseFolder${folderId}`);
+    if (folderPanel) {
+        folderPanel.classList.add("show");
+    }
+    attachSecretRegexValidation();
+}
+
 window.addEventListener("popstate", function (event) {
     const sectionFromState = event.state?.section;
     const sectionFromUrl = new URLSearchParams(window.location.search).get("section");
@@ -1933,6 +2008,114 @@ function clearModalArtifacts() {
 }
 
 document.addEventListener("submit", async function (event) {
+    const secretForm = event.target.closest("form.secret-form");
+    if (secretForm) {
+        if (event.defaultPrevented) {
+            return;
+        }
+        event.preventDefault();
+        const formData = new FormData(secretForm);
+        const submitButton = secretForm.querySelector('button[type="submit"]');
+        const folderId = secretForm.dataset.folderId;
+        if (submitButton) {
+            submitButton.disabled = true;
+        }
+
+        try {
+            const response = await fetch(secretForm.action, {
+                method: secretForm.method || "POST",
+                body: formData,
+                headers: { "X-Requested-With": "XMLHttpRequest" },
+                credentials: "same-origin",
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload.ok === false) {
+                throw new Error(payload.error || "Unable to create secret.");
+            }
+            secretForm.reset();
+            await refreshFolderSection(folderId);
+        } catch (error) {
+            window.alert(error.message || "Unable to create secret.");
+        } finally {
+            if (submitButton) {
+                submitButton.disabled = false;
+            }
+        }
+        return;
+    }
+
+    const folderForm = event.target.closest("form.folder-create-form");
+    if (folderForm) {
+        event.preventDefault();
+        const formData = new FormData(folderForm);
+        const submitButton = folderForm.querySelector('button[type="submit"]');
+        const envId = folderForm.dataset.envId;
+        if (submitButton) {
+            submitButton.disabled = true;
+        }
+
+        try {
+            const response = await fetch(folderForm.action, {
+                method: folderForm.method || "POST",
+                body: formData,
+                headers: { "X-Requested-With": "XMLHttpRequest" },
+                credentials: "same-origin",
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload.ok === false) {
+                throw new Error(payload.error || "Unable to create folder.");
+            }
+            folderForm.reset();
+            await refreshEnvironmentSection(envId);
+        } catch (error) {
+            window.alert(error.message || "Unable to create folder.");
+        } finally {
+            if (submitButton) {
+                submitButton.disabled = false;
+            }
+        }
+        return;
+    }
+
+    const editForm = event.target.closest("form.edit-secret-form");
+    if (editForm) {
+        event.preventDefault();
+        const formData = new FormData(editForm);
+        const modalElement = editForm.closest(".modal");
+        const submitButton = editForm.querySelector('button[type="submit"]');
+        if (submitButton) {
+            submitButton.disabled = true;
+        }
+
+        try {
+            const response = await fetch(editForm.action, {
+                method: editForm.method || "POST",
+                body: formData,
+                headers: { "X-Requested-With": "XMLHttpRequest" },
+                credentials: "same-origin",
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload.ok === false) {
+                throw new Error(payload.error || "Unable to update secret value.");
+            }
+
+            if (modalElement && window.bootstrap?.Modal) {
+                const modalInstance = bootstrap.Modal.getInstance(modalElement) || bootstrap.Modal.getOrCreateInstance(modalElement);
+                modalInstance.hide();
+                modalElement.addEventListener("hidden.bs.modal", clearModalArtifacts, { once: true });
+            }
+            editForm.reset();
+            setTimeout(clearModalArtifacts, 100);
+        } catch (error) {
+            window.alert(error.message || "Unable to update secret value.");
+        } finally {
+            if (submitButton) {
+                submitButton.disabled = false;
+            }
+        }
+        return;
+    }
+
     const form = event.target;
     if (!isAjaxManagedForm(form)) return;
 
@@ -2611,6 +2794,10 @@ async function loadSavedQueries() {
 
 function attachSecretRegexValidation() {
     document.querySelectorAll("form.secret-form").forEach(form => {
+        if (form.dataset.regexValidationAttached === "true") {
+            return;
+        }
+        form.dataset.regexValidationAttached = "true";
         form.addEventListener("submit", function (e) {
             const pattern = form.dataset.secretRegex || "";
             const mode = form.dataset.regexMode || "match";
