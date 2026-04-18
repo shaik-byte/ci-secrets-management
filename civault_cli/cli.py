@@ -83,6 +83,37 @@ def _extract_error(response: requests.Response) -> str:
         return response.text
 
 
+def _probe_auth(session: requests.Session, base_url: str) -> tuple[bool, str, dict[str, Any]]:
+    """Check whether the current session is authenticated.
+
+    Returns:
+        (is_authenticated, mode, details)
+        mode:
+            - "cli_api": CLI endpoints are available and authenticated.
+            - "legacy_ui": Authenticated against UI, but CLI API endpoints are missing.
+            - "unauthenticated": Session is not authenticated.
+    """
+    ping = session.get(f"{base_url}/secrets/cli/ping/", timeout=20, allow_redirects=False)
+    if ping.status_code == 200:
+        try:
+            return True, "cli_api", ping.json()
+        except Exception:
+            return True, "cli_api", {}
+
+    if ping.status_code == 404:
+        # Backward-compatibility fallback for servers running a branch
+        # that does not include the dedicated CLI API routes yet.
+        ui_probe = session.get(f"{base_url}/secrets/", timeout=20, allow_redirects=False)
+        location = (ui_probe.headers.get("Location") or "").lower()
+        redirected_to_login = ui_probe.status_code in {301, 302, 303, 307, 308} and "/login" in location
+        if ui_probe.status_code == 200 or (
+            ui_probe.status_code in {301, 302, 303, 307, 308} and not redirected_to_login
+        ):
+            return True, "legacy_ui", {}
+
+    return False, "unauthenticated", {}
+
+
 def cmd_configure(args: argparse.Namespace) -> int:
     _set_config(args.url)
     print(f"Configured vault '{APP_NAME}' URL: {args.url.rstrip('/')}")
@@ -127,12 +158,17 @@ def cmd_login(args: argparse.Namespace) -> int:
     response = session.post(login_url, data=payload, headers=headers, timeout=20, allow_redirects=True)
     response.raise_for_status()
 
-    ping = session.get(f"{base_url}/secrets/cli/ping/", timeout=20, allow_redirects=False)
-    if ping.status_code != 200:
+    authed, mode, details = _probe_auth(session, base_url)
+    if not authed:
         raise CliError("Login failed. Verify credentials and vault seal/auth state.")
 
     _save_session(session)
-    user = ping.json().get("user", "unknown")
+    user = details.get("user", "unknown")
+    if mode == "legacy_ui":
+        print(
+            "Authenticated to civault UI, but CLI API routes are not available on this server branch yet."
+        )
+        print("Tip: run the server from the CLI-enabled branch to use secret management commands.")
     print(f"Authenticated to {APP_NAME} as '{user}'. Session saved: {SESSION_FILE}")
     return 0
 
@@ -147,9 +183,13 @@ def cmd_logout(_: argparse.Namespace) -> int:
 def _authed_session(args: argparse.Namespace) -> tuple[str, requests.Session]:
     base_url = _base_url(args)
     session = _load_session()
-    ping = session.get(f"{base_url}/secrets/cli/ping/", timeout=20, allow_redirects=False)
-    if ping.status_code != 200:
+    authed, mode, _ = _probe_auth(session, base_url)
+    if not authed:
         raise CliError("Not authenticated. Run `civault login` first.")
+    if mode != "cli_api":
+        raise CliError(
+            "Authenticated session found, but CLI API routes are unavailable on this server branch."
+        )
     return base_url, session
 
 
