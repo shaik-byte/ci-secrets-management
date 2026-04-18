@@ -245,6 +245,18 @@ After login, the token is stored locally in:
 
 If users want to connect to a running vault server through CLI, use **civault**.
 
+### Install CLI package (required)
+
+```bash
+# from repository root
+python -m pip install .
+
+# verify binary
+civault --help
+```
+
+All Vault operations for remote access should be executed via the installed `civault` command.
+
 ### Key flow
 
 1. Configure URL once.
@@ -255,26 +267,26 @@ If users want to connect to a running vault server through CLI, use **civault**.
 
 ```bash
 # Configure vault URL (required first step)
-python cli/civault.py configure --url http://127.0.0.1:8000
+civault configure --url http://127.0.0.1:8000
 
 # Login (username/password)
-python cli/civault.py login --username admin --password <PASSWORD>
+civault login --username admin --password <PASSWORD>
 
 # or Login with root token
-python cli/civault.py login --root-token <ROOT_TOKEN>
+civault login --root-token <ROOT_TOKEN>
 
 # Check status
-python cli/civault.py status
+civault status
 
 # List secrets
-python cli/civault.py list-secrets --environment prod --folder payments
+civault list-secrets --environment prod --folder payments
 
 # Add secret
-python cli/civault.py add-secret --environment prod --folder payments --name API_KEY --value supersecret
+civault add-secret --environment prod --folder payments --name API_KEY --value supersecret
 
 # Delete secret by name or id
-python cli/civault.py delete-secret --environment prod --folder payments --name API_KEY
-python cli/civault.py delete-secret --environment prod --folder payments --id 1
+civault delete-secret --environment prod --folder payments --name API_KEY
+civault delete-secret --environment prod --folder payments --id 1
 ```
 
 ### civault local files
