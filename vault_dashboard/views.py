@@ -256,17 +256,7 @@ def dashboard(request):
     if "vault_key" not in request.session:
         return redirect("unseal")
 
-    if request.user.is_superuser:
-        environments = Environment.objects.select_related("created_by").all()
-    else:
-        readable_env_ids = AccessPolicy.objects.filter(
-            user=request.user,
-            can_read=True,
-            environment__isnull=False,
-        ).values_list("environment_id", flat=True)
-        environments = Environment.objects.filter(
-            Q(created_by=request.user) | Q(id__in=readable_env_ids)
-        ).distinct()
+    environments = _visible_environments_for_user(request.user)
     policy, _ = SecretPolicy.objects.get_or_create(created_by=request.user)
     policy_presets = [
         {
@@ -1743,9 +1733,36 @@ def _apply_access_policy_rules(rules):
         if not target_user:
             continue
 
-        environment = Environment.objects.filter(name=rule.get("environment")).first() if rule.get("environment") else None
-        folder = Folder.objects.filter(name=rule.get("folder")).first() if rule.get("folder") else None
-        secret = Secret.objects.filter(name=rule.get("secret")).first() if rule.get("secret") else None
+        environment_name = (rule.get("environment") or "").strip()
+        folder_name = (rule.get("folder") or "").strip()
+        secret_name = (rule.get("secret") or "").strip()
+
+        environment = None
+        if environment_name:
+            environment_matches = Environment.objects.filter(name=environment_name)
+            if environment_matches.count() != 1:
+                continue
+            environment = environment_matches.first()
+
+        folder = None
+        if folder_name:
+            folder_matches = Folder.objects.filter(name=folder_name)
+            if environment:
+                folder_matches = folder_matches.filter(environment=environment)
+            if folder_matches.count() != 1:
+                continue
+            folder = folder_matches.first()
+
+        secret = None
+        if secret_name:
+            secret_matches = Secret.objects.filter(name=secret_name)
+            if folder:
+                secret_matches = secret_matches.filter(folder=folder)
+            elif environment:
+                secret_matches = secret_matches.filter(folder__environment=environment)
+            if secret_matches.count() != 1:
+                continue
+            secret = secret_matches.first()
 
         permissions = rule.get("permissions") or {}
         AccessPolicy.objects.update_or_create(

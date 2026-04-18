@@ -1548,7 +1548,7 @@
                     </form>
 
                     <div class="accordion" id="folderAccordion{{ env.id }}">
-                        {% for folder in env.folders.all %}
+                        {% for folder in env.visible_folders %}
                         <div class="accordion-item mb-2">
 
                             <h2 class="accordion-header d-flex justify-content-between align-items-center">
@@ -1654,7 +1654,7 @@
                                             </tr>
                                         </thead>
                                         <tbody>
-                                        {% for secret in folder.secrets.all %}
+                                        {% for secret in folder.visible_secrets %}
                                             <tr>
                                                 <td>{{ secret.name }}</td>
                                                 <td>{{ secret.service_name|default:"-" }}</td>
@@ -1759,7 +1759,7 @@
                                         {% empty %}
                                             <tr>
                                                 <td colspan="6" class="text-muted text-center">
-                                                    No secrets yet
+                                                    No readable secrets in this folder
                                                 </td>
                                             </tr>
                                         {% endfor %}
@@ -1768,6 +1768,10 @@
 
                                 </div>
                             </div>
+                        </div>
+                        {% empty %}
+                        <div class="alert alert-light border text-muted mb-0">
+                            No readable folders in this environment.
                         </div>
                         {% endfor %}
                     </div>
