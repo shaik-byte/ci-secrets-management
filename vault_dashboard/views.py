@@ -143,7 +143,7 @@ from django.db.models import Q, Count, Avg
 from django.db import transaction
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_GET
+from django.views.decorators.http import require_GET, require_POST
 from datetime import datetime, timedelta
 from fnmatch import fnmatch
 import json
@@ -1495,42 +1495,11 @@ def save_access_policy_document(request):
         return redirect("vault_dashboard")
 
     try:
-        parsed = json.loads(raw) if doc_format == "json" else yaml.safe_load(raw)
-    except Exception as exc:
-        messages.error(request, f"Invalid {doc_format.upper()} policy document: {exc}")
+        parsed = _parse_policy_document(raw, doc_format)
+        created = _apply_access_policy_rules(parsed)
+    except ValueError as exc:
+        messages.error(request, str(exc))
         return redirect("vault_dashboard")
-
-    rules = parsed.get("rules") if isinstance(parsed, dict) else None
-    if not isinstance(rules, list):
-        messages.error(request, "Policy document must contain a top-level 'rules' list.")
-        return redirect("vault_dashboard")
-
-    created = 0
-    for rule in rules:
-        username = (rule.get("user") or "").strip()
-        if not username:
-            continue
-        target_user = User.objects.filter(username=username).first()
-        if not target_user:
-            continue
-
-        environment = Environment.objects.filter(name=rule.get("environment")).first() if rule.get("environment") else None
-        folder = Folder.objects.filter(name=rule.get("folder")).first() if rule.get("folder") else None
-        secret = Secret.objects.filter(name=rule.get("secret")).first() if rule.get("secret") else None
-
-        perms = rule.get("permissions") or {}
-        AccessPolicy.objects.update_or_create(
-            user=target_user,
-            environment=environment,
-            folder=folder,
-            secret=secret,
-            defaults={
-                "can_read": bool(perms.get("read")),
-                "can_write": bool(perms.get("write")),
-                "can_delete": bool(perms.get("delete")),
-            },
-        )
-        created += 1
 
     messages.success(request, f"Policy document processed. Updated {created} rule(s).")
     return redirect("vault_dashboard")
@@ -1734,6 +1703,53 @@ def _build_scope_payload(access_policy):
     }
 
 
+def _parse_policy_document(raw_document, document_format):
+    if document_format not in {"json", "yaml"}:
+        raise ValueError("document_format must be either 'json' or 'yaml'.")
+
+    try:
+        parsed = json.loads(raw_document) if document_format == "json" else yaml.safe_load(raw_document)
+    except Exception as exc:
+        raise ValueError(f"Invalid {document_format.upper()} policy document: {exc}") from exc
+
+    rules = parsed.get("rules") if isinstance(parsed, dict) else None
+    if not isinstance(rules, list):
+        raise ValueError("Policy document must contain a top-level 'rules' list.")
+
+    return rules
+
+
+def _apply_access_policy_rules(rules):
+    updated = 0
+    for rule in rules:
+        username = (rule.get("user") or "").strip()
+        if not username:
+            continue
+        target_user = User.objects.filter(username=username).first()
+        if not target_user:
+            continue
+
+        environment = Environment.objects.filter(name=rule.get("environment")).first() if rule.get("environment") else None
+        folder = Folder.objects.filter(name=rule.get("folder")).first() if rule.get("folder") else None
+        secret = Secret.objects.filter(name=rule.get("secret")).first() if rule.get("secret") else None
+
+        permissions = rule.get("permissions") or {}
+        AccessPolicy.objects.update_or_create(
+            user=target_user,
+            environment=environment,
+            folder=folder,
+            secret=secret,
+            defaults={
+                "can_read": bool(permissions.get("read")),
+                "can_write": bool(permissions.get("write")),
+                "can_delete": bool(permissions.get("delete")),
+            },
+        )
+        updated += 1
+
+    return updated
+
+
 @csrf_exempt
 @login_required
 @require_GET
@@ -1933,6 +1949,44 @@ def cli_delete_secret(request):
     )
 
     return JsonResponse({"ok": True, "vault": "civault", "deleted": deleted})
+
+
+@csrf_exempt
+@login_required
+@require_POST
+def cli_apply_policy(request):
+    if not user_has_feature(request.user, "policy"):
+        return JsonResponse({"ok": False, "error": "You do not have policy engine feature access."}, status=403)
+
+    payload = {}
+    if request.content_type and "application/json" in request.content_type:
+        try:
+            payload = json.loads(request.body.decode("utf-8") or "{}")
+        except Exception:
+            return JsonResponse({"ok": False, "error": "Invalid JSON body."}, status=400)
+    else:
+        payload = request.POST
+
+    raw = (payload.get("policy_document") or "").strip()
+    doc_format = (payload.get("document_format") or "json").strip().lower()
+    if not raw:
+        return JsonResponse({"ok": False, "error": "policy_document is required."}, status=400)
+
+    try:
+        rules = _parse_policy_document(raw, doc_format)
+        updated = _apply_access_policy_rules(rules)
+    except ValueError as exc:
+        return JsonResponse({"ok": False, "error": str(exc)}, status=400)
+
+    AuditLog.objects.create(
+        user=request.user,
+        action="UPDATE",
+        entity="AccessPolicy",
+        details=f"[CLI] Applied policy document. Updated {updated} rule(s).",
+        ip_address=get_client_ip(request),
+    )
+
+    return JsonResponse({"ok": True, "vault": "civault", "updated_rules": updated})
 
 
 @csrf_exempt
