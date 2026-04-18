@@ -7,8 +7,10 @@ Configure once, then authenticate and manage secrets remotely.
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import mimetypes
+import re
 from pathlib import Path
 from typing import Any
 
@@ -280,19 +282,40 @@ def cmd_policy_apply(args: argparse.Namespace) -> int:
         data={"policy_document": raw, "document_format": doc_format},
         headers=headers,
         timeout=20,
-        allow_redirects=False,
+        allow_redirects=True,
     )
 
-    if response.status_code in {301, 302, 303, 307, 308}:
-        location = response.headers.get("Location", "")
-        print(
-            f"Policy apply request accepted (HTTP {response.status_code}). "
-            f"Server redirect: {location or '-'}"
-        )
-        return 0
-
     if response.status_code == 200:
-        print("Policy apply request completed (HTTP 200).")
+        body = html.unescape(response.text or "")
+
+        if "You do not have policy engine feature access." in body:
+            raise CliError("Policy apply failed: your user does not have policy feature access.")
+
+        if "Policy document is empty." in body:
+            raise CliError("Policy apply failed: policy document is empty on server side.")
+
+        invalid_match = re.search(r"Invalid (JSON|YAML) policy document:\s*([^<\n]+)", body, flags=re.IGNORECASE)
+        if invalid_match:
+            raise CliError(
+                f"Policy apply failed: invalid {invalid_match.group(1).upper()} on server side: "
+                f"{invalid_match.group(2).strip()}"
+            )
+
+        count_match = re.search(r"Updated\s+(\d+)\s+rule\(s\)", body, flags=re.IGNORECASE)
+        if count_match:
+            updated = int(count_match.group(1))
+            if updated == 0:
+                raise CliError(
+                    "Policy apply processed 0 rules. "
+                    "Check username/environment/folder/secret names exactly match server records."
+                )
+            print(f"Policy apply succeeded. Updated {updated} rule(s).")
+            return 0
+
+        print(
+            "Policy apply request completed (HTTP 200), but server did not return an explicit "
+            "'Updated N rule(s)' message."
+        )
         return 0
 
     raise CliError(f"Policy apply failed: HTTP {response.status_code}: {_extract_error(response)}")

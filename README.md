@@ -104,6 +104,9 @@ Or YAML:
 civault policy-apply --file ./policy.yaml --format yaml
 ```
 
+> Note: policy rules are matched by exact names from the server (especially `user` as the exact username).  
+> If no records match, the server may process `0` rules.
+
 ## Local config/session files
 
 The CLI stores local state in:
