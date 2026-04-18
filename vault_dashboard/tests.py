@@ -120,8 +120,41 @@ class AccessScopeVisibilityTests(TestCase):
         policy = AccessPolicy.objects.get(user=self.user, can_read=True)
         self.assertEqual(policy.environment_id, self.environment.id)
         self.assertEqual(policy.folder_id, self.allowed_folder.id)
+        self.assertEqual(response.json()["skipped_rules"], 0)
+
+    def test_cli_apply_policy_accepts_case_insensitive_user_and_scope_names(self):
+        super_client = self.client_class()
+        super_client.force_login(User.objects.create_superuser("root3", "root3@example.com", "rootpass"))
+        response = super_client.post(
+            "/secrets/cli/policies/apply/",
+            data=json.dumps(
+                {
+                    "policy_document": json.dumps(
+                        {
+                            "rules": [
+                                {
+                                    "user": "COOPER",
+                                    "environment": "TEST",
+                                    "folder": "SHAIK",
+                                    "permissions": {"read": True},
+                                }
+                            ]
+                        }
+                    ),
+                    "document_format": "json",
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["updated_rules"], 1)
+        self.assertEqual(response.json()["skipped_rules"], 0)
+
+        policy = AccessPolicy.objects.get(user=self.user, environment=self.environment, folder=self.allowed_folder)
+        self.assertTrue(policy.can_read)
 
     def test_dashboard_uses_fallback_when_visibility_helper_missing(self):
         with patch.dict(dashboard_views.__dict__, {"_visible_environments_for_user": None}):
             response = self.client.get("/secrets/")
+        self.assertEqual(response.status_code, 200)
         self.assertEqual(response.status_code, 200)
