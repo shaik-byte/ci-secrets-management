@@ -147,6 +147,14 @@ def cli_login(request):
         return JsonResponse({"ok": False, "error": error or "Authentication failed."}, status=401)
 
     _record_login_audit(request, user, auth_method, channel="CLI")
+    login_method_label = "root_token" if auth_method == AUTH_METHOD_ROOT_TOKEN else "username_password"
+    AuditLog.objects.create(
+        user=user,
+        action="LOGIN",
+        entity="CLI",
+        details=f"[CLI] Authenticated via {login_method_label}",
+        ip_address=get_client_ip(request),
+    )
 
     return JsonResponse(
         {
