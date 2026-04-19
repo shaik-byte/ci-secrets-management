@@ -306,6 +306,7 @@ def cmd_policy_apply(args: argparse.Namespace) -> int:
         endpoint = (
             "/secrets/policy-engine/save-secret-document/"
             if is_secret_level
+            if _targets_secret_level(parsed)
             else "/secrets/policy-engine/save-document/"
         )
     if not endpoint.startswith("/"):
