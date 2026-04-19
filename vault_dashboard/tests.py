@@ -4,6 +4,7 @@ from unittest.mock import patch
 from django.contrib.auth.models import User
 from django.test import TestCase
 
+from auditlogs.models import AuditLog
 from .models import AccessPolicy, Environment, Folder
 from . import views as dashboard_views
 
@@ -158,3 +159,26 @@ class AccessScopeVisibilityTests(TestCase):
             response = self.client.get("/secrets/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.status_code, 200)
+
+    def test_cli_list_secrets_writes_audit_log(self):
+        from .models import Secret
+
+        Secret.objects.create(name="API_TOKEN", encrypted_value=b"ciphertext", folder=self.allowed_folder)
+
+        super_client = self.client_class()
+        superuser = User.objects.create_superuser("root4", "root4@example.com", "rootpass")
+        super_client.force_login(superuser)
+
+        response = super_client.get(
+            "/secrets/cli/secrets/",
+            data={"environment": "test", "folder": "shaik", "show_values": "false"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(
+            AuditLog.objects.filter(
+                user=superuser,
+                action="REVEAL",
+                entity="Secret",
+                details__contains="[CLI] Listed secrets in 'test/shaik'",
+            ).exists()
+        )

@@ -15,6 +15,8 @@ from django.shortcuts import redirect, render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
+from auditlogs.models import AuditLog
+
 from .crypto_utils import decrypt_root_key, encrypt_root_key
 from .models import VaultConfig
 from .security import get_client_ip, get_location_from_ip
@@ -132,6 +134,14 @@ def cli_login(request):
 
     if not user:
         return JsonResponse({"ok": False, "error": error or "Authentication failed."}, status=401)
+
+    AuditLog.objects.create(
+        user=user,
+        action="LOGIN",
+        entity="CLI Session",
+        details=f"[CLI] Login via '{auth_method}'.",
+        ip_address=get_client_ip(request),
+    )
 
     return JsonResponse(
         {
@@ -345,11 +355,35 @@ def dashboard(request):
 
 
 def logout_view(request):
+    if request.user.is_authenticated:
+        AuditLog.objects.create(
+            user=request.user,
+            action="LOGOUT",
+            entity="Web Session",
+            details="Logged out from web session.",
+            ip_address=get_client_ip(request),
+        )
     # Session destruction point:
     # logout() removes authenticated user state; flush() destroys session data.
     logout(request)
     request.session.flush()
     return redirect("login")
+
+
+@csrf_exempt
+@login_required
+@require_POST
+def cli_logout(request):
+    AuditLog.objects.create(
+        user=request.user,
+        action="LOGOUT",
+        entity="CLI Session",
+        details="[CLI] Logout.",
+        ip_address=get_client_ip(request),
+    )
+    logout(request)
+    request.session.flush()
+    return JsonResponse({"ok": True, "vault": "civault"})
 
 
 @login_required

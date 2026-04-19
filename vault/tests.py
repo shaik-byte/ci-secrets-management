@@ -1,10 +1,12 @@
 import base64
+import json
 
 from django.contrib.auth.models import User
 from django.core.cache import cache
 from django.test import TestCase
 from django.urls import reverse
 
+from auditlogs.models import AuditLog
 from vault.crypto_utils import encrypt_root_key
 from vault.models import VaultConfig
 
@@ -68,3 +70,36 @@ class LoginAuthenticationFlowTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Invalid root token.")
+
+    def test_cli_login_creates_audit_log(self):
+        response = self.client.post(
+            reverse("cli_login"),
+            data=json.dumps(
+                {
+                    "auth_method": "username_password",
+                    "username": "alice",
+                    "password": "alice-pass",
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(
+            AuditLog.objects.filter(
+                user=self.user,
+                action="LOGIN",
+                entity="CLI Session",
+            ).exists()
+        )
+
+    def test_cli_logout_creates_audit_log(self):
+        self.client.force_login(self.user)
+        response = self.client.post(reverse("cli_logout"))
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(
+            AuditLog.objects.filter(
+                user=self.user,
+                action="LOGOUT",
+                entity="CLI Session",
+            ).exists()
+        )

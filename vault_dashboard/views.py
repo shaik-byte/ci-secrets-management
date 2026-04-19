@@ -1864,6 +1864,13 @@ def _apply_access_policy_rules(rules):
 @login_required
 @require_GET
 def cli_ping(request):
+    AuditLog.objects.create(
+        user=request.user,
+        action="UPDATE",
+        entity="CLI Session",
+        details="[CLI] Ping.",
+        ip_address=get_client_ip(request),
+    )
     return JsonResponse(
         {
             "ok": True,
@@ -1910,6 +1917,17 @@ def cli_list_secrets(request):
             except Exception:
                 item["value"] = None
         rows.append(item)
+
+    AuditLog.objects.create(
+        user=request.user,
+        action="REVEAL",
+        entity="Secret",
+        details=(
+            f"[CLI] Listed secrets in '{environment_name}/{folder_name}' "
+            f"(show_values={show_values}, count={len(rows)})."
+        ),
+        ip_address=get_client_ip(request),
+    )
 
     return JsonResponse(
         {
@@ -2104,6 +2122,16 @@ def cli_apply_policy(request):
 @require_GET
 def cli_policy_sync_state(request):
     sync_state = _access_policy_sync_state()
+    AuditLog.objects.create(
+        user=request.user,
+        action="UPDATE",
+        entity="AccessPolicy",
+        details=(
+            f"[CLI] Read policy sync state token '{sync_state['token']}' "
+            f"(rules={sync_state['rule_count']})."
+        ),
+        ip_address=get_client_ip(request),
+    )
     return JsonResponse(
         {
             "ok": True,
@@ -2120,6 +2148,16 @@ def cli_policy_sync_state(request):
 @require_GET
 def cli_policy_sync_state(request):
     sync_state = _access_policy_sync_state()
+    AuditLog.objects.create(
+        user=request.user,
+        action="UPDATE",
+        entity="AccessPolicy",
+        details=(
+            f"[CLI] Read policy sync state token '{sync_state['token']}' "
+            f"(rules={sync_state['rule_count']})."
+        ),
+        ip_address=get_client_ip(request),
+    )
     return JsonResponse(
         {
             "ok": True,
