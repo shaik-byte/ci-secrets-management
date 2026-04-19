@@ -157,8 +157,12 @@ def cmd_login(args: argparse.Namespace) -> int:
         headers = {"Referer": login_url}
         if csrf_token:
             headers["X-CSRFToken"] = csrf_token
+        headers["X-CIVault-Client"] = "cli"
 
-        response = session.post(login_url, data=payload, headers=headers, timeout=20, allow_redirects=True)
+        fallback_payload = dict(payload)
+        fallback_payload["client_channel"] = "cli"
+
+        response = session.post(login_url, data=fallback_payload, headers=headers, timeout=20, allow_redirects=True)
         response.raise_for_status()
     elif response.status_code != 200:
         raise CliError(f"Login failed: {_extract_error(response)}")
