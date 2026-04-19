@@ -28,6 +28,17 @@ AUTH_METHOD_USERNAME_PASSWORD = "username_password"
 AUTH_METHOD_ROOT_TOKEN = "root_token"
 
 
+def _record_login_audit(request, user, auth_method, channel="WEB"):
+    login_method_label = "root_token" if auth_method == AUTH_METHOD_ROOT_TOKEN else "username_password"
+    AuditLog.objects.create(
+        user=user,
+        action="LOGIN",
+        entity=channel,
+        details=f"[{channel}] Authenticated via {login_method_label}",
+        ip_address=get_client_ip(request),
+    )
+
+
 def format_share(index: int, share_bytes: bytes) -> str:
     return f"{index}-{share_bytes.hex()}"
 
@@ -135,6 +146,7 @@ def cli_login(request):
     if not user:
         return JsonResponse({"ok": False, "error": error or "Authentication failed."}, status=401)
 
+    _record_login_audit(request, user, auth_method, channel="CLI")
     login_method_label = "root_token" if auth_method == AUTH_METHOD_ROOT_TOKEN else "username_password"
     AuditLog.objects.create(
         user=user,
@@ -333,6 +345,7 @@ def login_view(request):
 
         user, error = handler(request, vault)
         if user:
+            _record_login_audit(request, user, auth_method, channel="WEB")
             return redirect("vault_dashboard")
 
         return render(
