@@ -232,7 +232,7 @@ def cmd_delete_secret(args: argparse.Namespace) -> int:
     return 0
 
 
-def _load_policy_document(path: Path, doc_format: str | None) -> tuple[str, str]:
+def _load_policy_document(path: Path, doc_format: str | None) -> tuple[str, str, dict[str, Any]]:
     if not path.exists():
         raise CliError(f"Policy file not found: {path}")
 
@@ -260,14 +260,54 @@ def _load_policy_document(path: Path, doc_format: str | None) -> tuple[str, str]
     if not isinstance(rules, list):
         raise CliError("Policy document must contain a top-level 'rules' list.")
 
-    return raw, fmt
+    return raw, fmt, parsed
 
+
+def _targets_secret_level(policy_doc: dict[str, Any]) -> bool:
+    rules = policy_doc.get("rules") or []
+    secret_keys = {"secret", "secret_name", "secret_id", "secretName", "secretId"}
+    for rule in rules:
+        if not isinstance(rule, dict):
+            continue
+        for key in secret_keys:
+            value = rule.get(key)
+            if isinstance(value, str) and value.strip():
+                return True
+            if isinstance(value, int):
+                return True
+    return False
+
+
+
+def _post_policy_document(
+    session: requests.Session,
+    url: str,
+    payload: dict[str, str],
+    headers: dict[str, str],
+) -> requests.Response:
+    return session.post(
+        url,
+        data=payload,
+        headers=headers,
+        timeout=20,
+        allow_redirects=True,
+    )
 
 def cmd_policy_apply(args: argparse.Namespace) -> int:
     base_url, session = _authed_session(args)
-    raw, doc_format = _load_policy_document(Path(args.file), args.format)
+    raw, doc_format, parsed = _load_policy_document(Path(args.file), args.format)
 
-    endpoint = args.endpoint.strip() if args.endpoint else "/secrets/policy-engine/save-document/"
+    is_secret_level = _targets_secret_level(parsed)
+    used_auto_endpoint = not args.endpoint
+
+    if args.endpoint:
+        endpoint = args.endpoint.strip()
+    else:
+        endpoint = (
+            "/secrets/policy-engine/save-secret-document/"
+            if is_secret_level
+            else "/secrets/policy-engine/save-document/"
+        )
     if not endpoint.startswith("/"):
         endpoint = "/" + endpoint
     apply_url = f"{base_url}{endpoint}"
@@ -277,13 +317,18 @@ def cmd_policy_apply(args: argparse.Namespace) -> int:
     if csrf_token:
         headers["X-CSRFToken"] = csrf_token
 
-    response = session.post(
-        apply_url,
-        data={"policy_document": raw, "document_format": doc_format},
-        headers=headers,
-        timeout=20,
-        allow_redirects=True,
-    )
+    request_payload = {"policy_document": raw, "document_format": doc_format}
+    response = _post_policy_document(session, apply_url, request_payload, headers)
+
+    if (
+        used_auto_endpoint
+        and is_secret_level
+        and response.status_code == 404
+        and endpoint == "/secrets/policy-engine/save-secret-document/"
+    ):
+        fallback_endpoint = "/secrets/policy-engine/save-document/"
+        fallback_url = f"{base_url}{fallback_endpoint}"
+        response = _post_policy_document(session, fallback_url, request_payload, headers)
 
     if response.status_code == 200:
         body = html.unescape(response.text or "")
@@ -373,8 +418,10 @@ def build_parser() -> argparse.ArgumentParser:
     policy_apply.add_argument("--format", choices=["json", "yaml"], help="Explicit document format")
     policy_apply.add_argument(
         "--endpoint",
-        default="/secrets/policy-engine/save-document/",
-        help="Server endpoint path for policy apply",
+        help=(
+            "Optional server endpoint path for policy apply. "
+            "If omitted, CLI auto-selects the folder or secret policy endpoint based on rules."
+        ),
     )
     policy_apply.set_defaults(func=cmd_policy_apply)
 
