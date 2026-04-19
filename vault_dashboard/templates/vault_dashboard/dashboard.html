@@ -1479,14 +1479,17 @@
                         </div>
                     </form>
                     {% endif %}
+                    {% if env.can_delete %}
                     <button class="btn btn-outline-danger btn-sm"
                             data-bs-toggle="modal"
                             data-bs-target="#deleteEnvModal{{ env.id }}">
                         Delete
                     </button>
+                    {% endif %}
                 </div>
             </h2>
 
+            {% if env.can_delete %}
             <!-- DELETE ENVIRONMENT MODAL -->
             <div class="modal fade" id="deleteEnvModal{{ env.id }}" tabindex="-1">
                 <div class="modal-dialog modal-dialog-centered">
@@ -1522,6 +1525,7 @@
                     </div>
                 </div>
             </div>
+            {% endif %}
 
             <div id="collapseEnv{{ env.id }}"
                  class="accordion-collapse collapse"
@@ -1529,6 +1533,7 @@
 
                 <div class="accordion-body">
 
+                    {% if env.can_write %}
                     <!-- ADD FOLDER -->
                     <form method="POST"
                           action="{% url 'add_folder' env.id %}"
@@ -1546,6 +1551,7 @@
                             <button type="submit" class="btn btn-secondary w-100">Add Folder</button>
                         </div>
                     </form>
+                    {% endif %}
 
                     <div class="accordion" id="folderAccordion{{ env.id }}">
                         {% for folder in env.visible_folders %}
@@ -1566,14 +1572,17 @@
                                 </button>
 
                                 <div class="folder-header-actions">
+                                    {% if folder.can_delete %}
                                     <button class="btn btn-outline-danger btn-sm"
                                             data-bs-toggle="modal"
                                             data-bs-target="#deleteFolderModal{{ folder.id }}">
                                         Delete
                                     </button>
+                                    {% endif %}
                                 </div>
                             </h2>
 
+                            {% if folder.can_delete %}
                             <!-- DELETE FOLDER MODAL -->
                             <div class="modal fade" id="deleteFolderModal{{ folder.id }}" tabindex="-1">
                                 <div class="modal-dialog modal-dialog-centered">
@@ -1609,6 +1618,7 @@
                                     </div>
                                 </div>
                             </div>
+                            {% endif %}
 
                             <div id="collapseFolder{{ folder.id }}"
                                  class="accordion-collapse collapse"
@@ -1616,6 +1626,7 @@
 
                                 <div class="accordion-body">
 
+                                    {% if folder.can_write %}
                                     <!-- ADD SECRET -->
                                     <form method="POST"
                                           action="{% url 'add_secret' folder.id %}"
@@ -1641,6 +1652,7 @@
                                             <button type="submit" class="btn btn-success w-100">Add Secret</button>
                                         </div>
                                     </form>
+                                    {% endif %}
 
                                     <!-- SECRET TABLE -->
                                     <table class="table table-sm table-striped align-middle secret-table">
@@ -1663,22 +1675,20 @@
                                                 </td>
                                                 <td>{{ secret.expire_date }}</td>
                                                 <td class="secret-action-cell">
-                                                    {% if secret.is_access_enabled or request.user.is_superuser %}
                                                     <button class="btn btn-outline-primary btn-sm"
                                                             onclick="copySecret({{ secret.id }})">
                                                         Copy
                                                     </button>
-                                                    {% else %}
-                                                    <span class="badge bg-secondary">Admin Locked</span>
-                                                    {% endif %}
 
+                                                    {% if secret.can_delete %}
                                                     <button class="btn btn-outline-danger btn-sm"
                                                             data-bs-toggle="modal"
                                                             data-bs-target="#deleteSecretModal{{ secret.id }}">
                                                         Delete
                                                     </button>
+                                                    {% endif %}
 
-                                                    {% if request.user.is_superuser %}
+                                                    {% if secret.can_write %}
                                                     <button class="btn btn-outline-danger btn-sm"
                                                             data-bs-toggle="modal"
                                                             data-bs-target="#editSecretModal{{ secret.id }}">
@@ -1688,6 +1698,7 @@
                                                 </td>
                                             </tr>
 
+                                            {% if secret.can_delete %}
                                             <!-- DELETE SECRET MODAL -->
                                             <div class="modal fade" id="deleteSecretModal{{ secret.id }}" tabindex="-1">
                                                 <div class="modal-dialog modal-dialog-centered">
@@ -1723,8 +1734,9 @@
                                                     </div>
                                                 </div>
                                             </div>
+                                            {% endif %}
 
-                                            {% if request.user.is_superuser %}
+                                            {% if secret.can_write %}
                                             <div class="modal fade" id="editSecretModal{{ secret.id }}" tabindex="-1">
                                                 <div class="modal-dialog modal-dialog-centered">
                                                     <div class="modal-content">

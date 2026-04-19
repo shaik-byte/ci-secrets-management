@@ -602,9 +602,6 @@ def reveal_secret(request, secret_id):
     if not _has_access(request.user, "read", secret=secret):
         return JsonResponse({"error": "You do not have read access for this secret."}, status=403)
 
-    if not secret.is_access_enabled and not request.user.is_superuser:
-        return JsonResponse({"error": "Secret access is locked by admin."}, status=403)
-
     decrypted = decrypt_value(request, secret.encrypted_value)
 
     AuditLog.objects.create(
@@ -624,9 +621,6 @@ def copy_secret(request, secret_id):
     secret = get_object_or_404(Secret, id=secret_id)
     if not _has_access(request.user, "read", secret=secret):
         return JsonResponse({"error": "You do not have read access for this secret."}, status=403)
-
-    if not secret.is_access_enabled and not request.user.is_superuser:
-        return JsonResponse({"error": "Secret access is locked by admin."}, status=403)
 
     decrypted = decrypt_value(request, secret.encrypted_value)
 
@@ -711,7 +705,7 @@ def search_secret_paths(request):
             "secret_name": secret.name,
             "service_name": secret.service_name,
             "path": f"{secret.folder.environment.name}/{secret.folder.name}/{secret.name}",
-            "reveal_enabled": bool(secret.is_access_enabled or request.user.is_superuser),
+            "reveal_enabled": True,
         })
         if len(matches) >= 50:
             break
@@ -787,7 +781,7 @@ def search_expiring_secrets(request):
             "path": f"{secret.folder.environment.name}/{secret.folder.name}/{secret.name}",
             "expire_date": secret.expire_date.isoformat() if secret.expire_date else "",
             "days_until_expiry": (secret.expire_date - today).days if secret.expire_date else None,
-            "reveal_enabled": bool(secret.is_access_enabled or request.user.is_superuser),
+            "reveal_enabled": True,
         })
         if len(matches) >= 50:
             break
@@ -1504,6 +1498,13 @@ def save_access_policy_ui(request):
     environment = Environment.objects.filter(id=environment_id).first() if environment_id else None
     folder = Folder.objects.filter(id=folder_id).first() if folder_id else None
     secret = Secret.objects.filter(id=secret_id).first() if secret_id else None
+
+    # Keep scope hierarchy consistent when narrower scope is provided.
+    if secret:
+        folder = secret.folder
+        environment = secret.folder.environment
+    elif folder and not environment:
+        environment = folder.environment
 
     can_read = bool(request.POST.get("can_read"))
     can_write = bool(request.POST.get("can_write"))
