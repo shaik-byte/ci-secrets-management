@@ -232,7 +232,7 @@ def cmd_delete_secret(args: argparse.Namespace) -> int:
     return 0
 
 
-def _load_policy_document(path: Path, doc_format: str | None) -> tuple[str, str]:
+def _load_policy_document(path: Path, doc_format: str | None) -> tuple[str, str, dict[str, Any]]:
     if not path.exists():
         raise CliError(f"Policy file not found: {path}")
 
@@ -260,14 +260,36 @@ def _load_policy_document(path: Path, doc_format: str | None) -> tuple[str, str]
     if not isinstance(rules, list):
         raise CliError("Policy document must contain a top-level 'rules' list.")
 
-    return raw, fmt
+    return raw, fmt, parsed
+
+
+def _targets_secret_level(policy_doc: dict[str, Any]) -> bool:
+    rules = policy_doc.get("rules") or []
+    secret_keys = {"secret", "secret_name", "secret_id", "secretName", "secretId"}
+    for rule in rules:
+        if not isinstance(rule, dict):
+            continue
+        for key in secret_keys:
+            value = rule.get(key)
+            if isinstance(value, str) and value.strip():
+                return True
+            if isinstance(value, int):
+                return True
+    return False
 
 
 def cmd_policy_apply(args: argparse.Namespace) -> int:
     base_url, session = _authed_session(args)
-    raw, doc_format = _load_policy_document(Path(args.file), args.format)
+    raw, doc_format, parsed = _load_policy_document(Path(args.file), args.format)
 
-    endpoint = args.endpoint.strip() if args.endpoint else "/secrets/policy-engine/save-document/"
+    if args.endpoint:
+        endpoint = args.endpoint.strip()
+    else:
+        endpoint = (
+            "/secrets/policy-engine/save-secret-document/"
+            if _targets_secret_level(parsed)
+            else "/secrets/policy-engine/save-document/"
+        )
     if not endpoint.startswith("/"):
         endpoint = "/" + endpoint
     apply_url = f"{base_url}{endpoint}"
@@ -373,8 +395,10 @@ def build_parser() -> argparse.ArgumentParser:
     policy_apply.add_argument("--format", choices=["json", "yaml"], help="Explicit document format")
     policy_apply.add_argument(
         "--endpoint",
-        default="/secrets/policy-engine/save-document/",
-        help="Server endpoint path for policy apply",
+        help=(
+            "Optional server endpoint path for policy apply. "
+            "If omitted, CLI auto-selects the folder or secret policy endpoint based on rules."
+        ),
     )
     policy_apply.set_defaults(func=cmd_policy_apply)
 
