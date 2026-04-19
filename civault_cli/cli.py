@@ -293,21 +293,22 @@ def _post_policy_document(
         allow_redirects=True,
     )
 
-
-def _select_policy_endpoint(explicit_endpoint: str | None, is_secret_level: bool) -> tuple[str, bool]:
-    if explicit_endpoint:
-        return explicit_endpoint.strip(), False
-    if is_secret_level:
-        return "/secrets/policy-engine/save-secret-document/", True
-    return "/secrets/policy-engine/save-document/", True
-
-
 def cmd_policy_apply(args: argparse.Namespace) -> int:
     base_url, session = _authed_session(args)
     raw, doc_format, parsed = _load_policy_document(Path(args.file), args.format)
 
     is_secret_level = _targets_secret_level(parsed)
-    endpoint, used_auto_endpoint = _select_policy_endpoint(args.endpoint, is_secret_level)
+    used_auto_endpoint = not args.endpoint
+
+    if args.endpoint:
+        endpoint = args.endpoint.strip()
+    else:
+        endpoint = (
+            "/secrets/policy-engine/save-secret-document/"
+            if is_secret_level
+            if _targets_secret_level(parsed)
+            else "/secrets/policy-engine/save-document/"
+        )
     if not endpoint.startswith("/"):
         endpoint = "/" + endpoint
     apply_url = f"{base_url}{endpoint}"
