@@ -179,15 +179,6 @@ def cmd_login(args: argparse.Namespace) -> int:
 
 
 def cmd_logout(_: argparse.Namespace) -> int:
-    config = _get_config()
-    url = (config.get("url") or "").strip().rstrip("/")
-    if url and SESSION_FILE.exists():
-        session = _load_session()
-        try:
-            session.post(f"{url}/logout/cli/", timeout=20)
-        except requests.RequestException:
-            pass
-
     if SESSION_FILE.exists():
         SESSION_FILE.unlink()
     print("Logged out from civault CLI session.")
