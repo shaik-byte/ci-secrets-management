@@ -5,6 +5,7 @@ from django.core.cache import cache
 from django.test import TestCase
 from django.urls import reverse
 
+from auditlogs.models import AuditLog
 from vault.crypto_utils import encrypt_root_key
 from vault.models import VaultConfig
 
@@ -68,3 +69,19 @@ class LoginAuthenticationFlowTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Invalid root token.")
+
+    def test_cli_login_writes_audit_log(self):
+        response = self.client.post(
+            reverse("cli_login"),
+            data={
+                "auth_method": "username_password",
+                "username": "alice",
+                "password": "alice-pass",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json().get("ok"))
+
+        log = AuditLog.objects.filter(user=self.user, action="LOGIN", entity="CLI").order_by("-timestamp").first()
+        self.assertIsNotNone(log)
+        self.assertIn("Authenticated via username_password", log.details or "")

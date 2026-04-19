@@ -15,6 +15,8 @@ from django.shortcuts import redirect, render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
+from auditlogs.models import AuditLog
+
 from .crypto_utils import decrypt_root_key, encrypt_root_key
 from .models import VaultConfig
 from .security import get_client_ip, get_location_from_ip
@@ -132,6 +134,15 @@ def cli_login(request):
 
     if not user:
         return JsonResponse({"ok": False, "error": error or "Authentication failed."}, status=401)
+
+    login_method_label = "root_token" if auth_method == AUTH_METHOD_ROOT_TOKEN else "username_password"
+    AuditLog.objects.create(
+        user=user,
+        action="LOGIN",
+        entity="CLI",
+        details=f"[CLI] Authenticated via {login_method_label}",
+        ip_address=get_client_ip(request),
+    )
 
     return JsonResponse(
         {
