@@ -1912,6 +1912,17 @@ def cli_list_secrets(request):
                 item["value"] = None
         rows.append(item)
 
+    AuditLog.objects.create(
+        user=request.user,
+        action="REVEAL" if show_values else "COPY",
+        entity="Secret",
+        details=(
+            f"[CLI] Listed {len(rows)} secret(s) in '{environment_name}/{folder_name}' "
+            f"(show_values={'yes' if show_values else 'no'})"
+        ),
+        ip_address=get_client_ip(request),
+    )
+
     return JsonResponse(
         {
             "ok": True,
