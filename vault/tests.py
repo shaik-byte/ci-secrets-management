@@ -91,3 +91,14 @@ class LoginAuthenticationFlowTests(TestCase):
         log = AuditLog.objects.filter(user=self.user, action="LOGIN", entity="CLI").order_by("-timestamp").first()
         self.assertIsNotNone(log)
         self.assertIn("Authenticated via username_password", log.details or "")
+        self.assertEqual(AuditLog.objects.filter(user=self.user, action="LOGIN", entity="CLI").count(), 1)
+
+    def test_cli_logout_writes_audit_log(self):
+        self.client.force_login(self.user)
+        response = self.client.post(reverse("cli_logout"))
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json().get("ok"))
+
+        log = AuditLog.objects.filter(user=self.user, action="LOGOUT", entity="CLI").order_by("-timestamp").first()
+        self.assertIsNotNone(log)
+        self.assertIn("Logged out", log.details or "")
