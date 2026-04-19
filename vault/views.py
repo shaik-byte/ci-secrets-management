@@ -371,6 +371,11 @@ def login_view(request):
         user, error = handler(request, vault)
         if user:
             channel = AUTH_CHANNEL_CLI_VIA_WEB if _is_cli_web_fallback_request(request) else AUTH_CHANNEL_WEB
+            requested_client_channel = (request.POST.get("client_channel") or "").strip().lower()
+            client_header = (request.headers.get("X-CIVault-Client") or "").strip().lower()
+            channel = AUTH_CHANNEL_WEB
+            if requested_client_channel == "cli" or client_header == "cli":
+                channel = AUTH_CHANNEL_CLI_VIA_WEB
 
             _record_login_audit(request, user, auth_method, channel=channel)
             return redirect("vault_dashboard")
