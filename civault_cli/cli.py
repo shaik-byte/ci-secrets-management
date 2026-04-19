@@ -27,6 +27,15 @@ class CliError(Exception):
     pass
 
 
+def _parse_bool(value: str) -> bool:
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "y", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "n", "off"}:
+        return False
+    raise argparse.ArgumentTypeError("Expected true/false.")
+
+
 def _ensure_dir() -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -321,6 +330,48 @@ def cmd_policy_apply(args: argparse.Namespace) -> int:
     raise CliError(f"Policy apply failed: HTTP {response.status_code}: {_extract_error(response)}")
 
 
+def cmd_policy_save(args: argparse.Namespace) -> int:
+    base_url, session = _authed_session(args)
+    endpoint = args.endpoint.strip().rstrip("/") if args.endpoint else "/secrets/cli/policy/save"
+    if not endpoint.startswith("/"):
+        endpoint = "/" + endpoint
+
+    payload: dict[str, Any] = {
+        "user": args.user,
+        "environment": args.environment or "",
+        "folder": args.folder or "",
+        "secret": args.secret or "",
+        "permissions": {
+            "read": args.read,
+            "write": args.write,
+            "delete": args.delete,
+        },
+    }
+
+    response = session.post(f"{base_url}{endpoint}/", json=payload, timeout=20)
+    if response.status_code not in {200, 201}:
+        raise CliError(f"Policy save failed: HTTP {response.status_code}: {_extract_error(response)}")
+
+    body: dict[str, Any] = {}
+    try:
+        body = response.json()
+    except Exception:
+        pass
+
+    policy = body.get("policy", {}) if isinstance(body, dict) else {}
+    policy_id = policy.get("id")
+    summary = (
+        f"user={args.user} scope="
+        f"{args.environment or '*'}:{args.folder or '*'}:{args.secret or '*'} "
+        f"perms(read={args.read}, write={args.write}, delete={args.delete})"
+    )
+    if policy_id is not None:
+        print(f"Policy saved (id={policy_id}): {summary}")
+    else:
+        print(f"Policy saved: {summary}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="civault", description="civault CLI client")
     parser.add_argument("--url", help="Override configured vault URL for this command")
@@ -377,6 +428,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="Server endpoint path for policy apply",
     )
     policy_apply.set_defaults(func=cmd_policy_apply)
+
+    policy_save = subparsers.add_parser(
+        "policy-save",
+        help="Create/update a user policy for environment/folder/secret scope",
+    )
+    policy_save.add_argument("--user", required=True, help="Target username")
+    policy_save.add_argument("--environment", help="Environment name (optional)")
+    policy_save.add_argument("--folder", help="Folder name (optional)")
+    policy_save.add_argument("--secret", help="Secret name (optional)")
+    policy_save.add_argument("--read", required=True, type=_parse_bool, help="Permission: true/false")
+    policy_save.add_argument("--write", required=True, type=_parse_bool, help="Permission: true/false")
+    policy_save.add_argument("--delete", required=True, type=_parse_bool, help="Permission: true/false")
+    policy_save.add_argument(
+        "--endpoint",
+        default="/secrets/cli/policy/save",
+        help="Server endpoint path for direct policy save",
+    )
+    policy_save.set_defaults(func=cmd_policy_save)
 
     return parser
 
