@@ -55,6 +55,23 @@ def _record_logout_audit(request, user, channel=AUTH_CHANNEL_WEB):
     )
 
 
+def _is_cli_web_fallback_request(request) -> bool:
+    requested_client_channel = (request.POST.get("client_channel") or "").strip().lower()
+    client_header = (request.headers.get("X-CIVault-Client") or "").strip().lower()
+    if requested_client_channel == "cli" or client_header == "cli":
+        return True
+
+    user_agent = (request.headers.get("User-Agent") or "").lower()
+    has_csrf_form_field = bool(request.POST.get("csrfmiddlewaretoken"))
+    has_api_auth_payload = bool(request.POST.get("auth_method"))
+
+    return (
+        has_api_auth_payload
+        and not has_csrf_form_field
+        and user_agent.startswith("python-requests/")
+    )
+
+
 def format_share(index: int, share_bytes: bytes) -> str:
     return f"{index}-{share_bytes.hex()}"
 
@@ -353,6 +370,7 @@ def login_view(request):
 
         user, error = handler(request, vault)
         if user:
+            channel = AUTH_CHANNEL_CLI_VIA_WEB if _is_cli_web_fallback_request(request) else AUTH_CHANNEL_WEB
             requested_client_channel = (request.POST.get("client_channel") or "").strip().lower()
             client_header = (request.headers.get("X-CIVault-Client") or "").strip().lower()
             channel = AUTH_CHANNEL_WEB
