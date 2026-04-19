@@ -14,7 +14,6 @@ This branch (`cli-package`) intentionally contains only the installable CLI pack
 - Add secrets
 - Delete secrets
 - Apply access policies from JSON/YAML documents
-- Save direct read/write/delete policy by scope (environment/folder/secret)
 
 ## Installation
 
@@ -107,23 +106,6 @@ civault policy-apply --file ./policy.yaml --format yaml
 
 > Note: policy rules are matched by exact names from the server (especially `user` as the exact username).  
 > If no records match, the server may process `0` rules.
-
-### 6) Save policy directly from CLI
-
-Apply read/write/delete access for a user at environment/folder/secret scope:
-
-```bash
-civault policy-save \
-  --user cooper \
-  --environment test \
-  --folder shaik \
-  --secret API_KEY \
-  --read true \
-  --write true \
-  --delete true
-```
-
-You can also set broader scope by omitting `--secret` or `--folder`.
 
 ## Local config/session files
 
