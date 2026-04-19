@@ -437,3 +437,61 @@ Response includes:
 - `expires_in` / `expires_at`
 - resolved `machine_policy`
 - effective access scope (`read/write/delete`)
+
+## 🐍 Python example: read a secret using Vault CLI
+
+If you want to call the Vault CLI from Python and print the secret to logs, you can use `subprocess`.
+
+> ⚠️ Printing raw secrets to logs is risky. Prefer masking or printing only in local/dev.
+
+```python
+import logging
+import subprocess
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logger = logging.getLogger("vault-demo")
+
+
+def get_secret_with_cli(secret_name: str, env_name: str, folder_name: str) -> str:
+    """
+    Calls civault CLI and returns the secret value for `secret_name`.
+
+    Requires:
+      1) You already ran `python cli/civault.py login ...`
+      2) civault command can run from this project directory
+    """
+    cmd = [
+        "python",
+        "cli/civault.py",
+        "list-secrets",
+        "--env",
+        env_name,
+        "--folder",
+        folder_name,
+    ]
+
+    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+
+    # Example parser: assumes CLI prints lines like KEY=VALUE
+    for line in result.stdout.splitlines():
+        if line.startswith(f"{secret_name}="):
+            return line.split("=", 1)[1]
+
+    raise RuntimeError(f"Secret '{secret_name}' not found in CLI output")
+
+
+if __name__ == "__main__":
+    secret = get_secret_with_cli("DB_PASSWORD", "dev", "backend")
+
+    # Option A (safer): masked logging
+    logger.info("DB_PASSWORD fetched from Vault CLI: %s***", secret[:3])
+
+    # Option B (requested): raw logging (use only in dev)
+    logger.info("DB_PASSWORD from Vault CLI: %s", secret)
+```
+
+Run it:
+
+```bash
+python your_script.py
+```
