@@ -193,6 +193,32 @@ def cmd_list_secrets(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_get_secret(args: argparse.Namespace) -> int:
+    base_url, session = _authed_session(args)
+    params = {
+        "environment": args.environment,
+        "folder": args.folder,
+        "show_values": "true",
+    }
+    response = session.get(f"{base_url}/secrets/cli/secrets/", params=params, timeout=20)
+    if response.status_code != 200:
+        raise CliError(f"Get failed: {_extract_error(response)}")
+
+    secrets = response.json().get("secrets", [])
+    if args.id is not None:
+        matches = [secret for secret in secrets if secret.get("id") == args.id]
+    else:
+        matches = [secret for secret in secrets if secret.get("name") == args.name]
+
+    if not matches:
+        identifier = f"id={args.id}" if args.id is not None else f"name={args.name}"
+        raise CliError(f"Secret not found in {args.environment}/{args.folder}: {identifier}")
+
+    secret = matches[0]
+    print(json.dumps(secret, indent=2))
+    return 0
+
+
 def cmd_add_secret(args: argparse.Namespace) -> int:
     base_url, session = _authed_session(args)
     payload = {
@@ -395,6 +421,14 @@ def build_parser() -> argparse.ArgumentParser:
     list_cmd.add_argument("--folder", required=True)
     list_cmd.add_argument("--show-values", action="store_true")
     list_cmd.set_defaults(func=cmd_list_secrets)
+
+    get_cmd = subparsers.add_parser("get-secret", help="Get one secret by id or name")
+    get_cmd.add_argument("--environment", required=True)
+    get_cmd.add_argument("--folder", required=True)
+    get_group = get_cmd.add_mutually_exclusive_group(required=True)
+    get_group.add_argument("--id", type=int)
+    get_group.add_argument("--name")
+    get_cmd.set_defaults(func=cmd_get_secret)
 
     add_cmd = subparsers.add_parser("add-secret", help="Create a secret")
     add_cmd.add_argument("--environment", required=True)

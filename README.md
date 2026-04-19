@@ -11,6 +11,7 @@ This branch (`cli-package`) intentionally contains only the installable CLI pack
 - Persist CLI session cookies locally
 - Check CLI authentication status
 - List secrets
+- Get a single secret by id or name
 - Add secrets
 - Delete secrets
 - Apply access policies from JSON/YAML documents
@@ -67,6 +68,7 @@ civault status
 
 ```bash
 civault list-secrets --environment prod --folder payments
+civault get-secret --environment prod --folder payments --name API_KEY
 civault add-secret --environment prod --folder payments --name API_KEY --value supersecret
 civault delete-secret --environment prod --folder payments --name API_KEY
 ```
