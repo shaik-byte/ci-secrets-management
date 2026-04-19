@@ -64,6 +64,41 @@ class LoginAuthenticationFlowTests(TestCase):
         self.assertIsNotNone(log)
         self.assertIn("Authenticated via root_token", log.details or "")
 
+    def test_web_login_marks_cli_fallback_channel_when_requested_by_cli_client(self):
+        response = self.client.post(
+            reverse("login"),
+            {
+                "auth_method": "username_password",
+                "username": "alice",
+                "password": "alice-pass",
+                "client_channel": "cli",
+            },
+            HTTP_X_CIVAULT_CLIENT="cli",
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse("vault_dashboard"))
+
+        log = AuditLog.objects.filter(user=self.user, action="LOGIN", entity="CLI_VIA_WEB").order_by("-timestamp").first()
+        self.assertIsNotNone(log)
+        self.assertIn("CLI used /login fallback", log.details or "")
+
+    def test_web_login_marks_cli_fallback_channel_for_legacy_cli_user_agent(self):
+        response = self.client.post(
+            reverse("login"),
+            {
+                "auth_method": "username_password",
+                "username": "alice",
+                "password": "alice-pass",
+            },
+            HTTP_USER_AGENT="python-requests/2.31.0",
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse("vault_dashboard"))
+
+        log = AuditLog.objects.filter(user=self.user, action="LOGIN", entity="CLI_VIA_WEB").order_by("-timestamp").first()
+        self.assertIsNotNone(log)
+        self.assertIn("CLI used /login fallback", log.details or "")
+
     def test_invalid_root_token_shows_error(self):
         invalid_b64_token = base64.b64encode(b"wrong-root-key-1").decode()
         response = self.client.post(

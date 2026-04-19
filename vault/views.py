@@ -26,26 +26,49 @@ logger = logging.getLogger(__name__)
 
 AUTH_METHOD_USERNAME_PASSWORD = "username_password"
 AUTH_METHOD_ROOT_TOKEN = "root_token"
+AUTH_CHANNEL_WEB = "WEB"
+AUTH_CHANNEL_CLI = "CLI"
+AUTH_CHANNEL_CLI_VIA_WEB = "CLI_VIA_WEB"
 
 
-def _record_login_audit(request, user, auth_method, channel="WEB"):
+def _record_login_audit(request, user, auth_method, channel=AUTH_CHANNEL_WEB):
     login_method_label = "root_token" if auth_method == AUTH_METHOD_ROOT_TOKEN else "username_password"
+    details = f"[{channel}] Authenticated via {login_method_label}"
+    if channel == AUTH_CHANNEL_CLI_VIA_WEB:
+        details += " (CLI used /login fallback)"
     AuditLog.objects.create(
         user=user,
         action="LOGIN",
         entity=channel,
-        details=f"[{channel}] Authenticated via {login_method_label}",
+        details=details,
         ip_address=get_client_ip(request),
     )
 
 
-def _record_logout_audit(request, user, channel="WEB"):
+def _record_logout_audit(request, user, channel=AUTH_CHANNEL_WEB):
     AuditLog.objects.create(
         user=user,
         action="LOGOUT",
         entity=channel,
         details=f"[{channel}] Logged out",
         ip_address=get_client_ip(request),
+    )
+
+
+def _is_cli_web_fallback_request(request) -> bool:
+    requested_client_channel = (request.POST.get("client_channel") or "").strip().lower()
+    client_header = (request.headers.get("X-CIVault-Client") or "").strip().lower()
+    if requested_client_channel == "cli" or client_header == "cli":
+        return True
+
+    user_agent = (request.headers.get("User-Agent") or "").lower()
+    has_csrf_form_field = bool(request.POST.get("csrfmiddlewaretoken"))
+    has_api_auth_payload = bool(request.POST.get("auth_method"))
+
+    return (
+        has_api_auth_payload
+        and not has_csrf_form_field
+        and user_agent.startswith("python-requests/")
     )
 
 
@@ -347,7 +370,9 @@ def login_view(request):
 
         user, error = handler(request, vault)
         if user:
-            _record_login_audit(request, user, auth_method, channel="WEB")
+            channel = AUTH_CHANNEL_CLI_VIA_WEB if _is_cli_web_fallback_request(request) else AUTH_CHANNEL_WEB
+
+            _record_login_audit(request, user, auth_method, channel=channel)
             return redirect("vault_dashboard")
 
         return render(
