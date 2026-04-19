@@ -78,6 +78,12 @@ class AccessScopeVisibilityTests(TestCase):
             encrypted_value=fernet.encrypt(b"super-secret"),
             folder=self.allowed_folder,
         )
+        self.other_secret = Secret.objects.create(
+            name="DB_PASSWORD",
+            service_name="svc",
+            encrypted_value=fernet.encrypt(b"other-secret"),
+            folder=self.allowed_folder,
+        )
 
     def test_dashboard_shows_only_policy_allowed_folder(self):
         AccessPolicy.objects.create(
@@ -217,3 +223,64 @@ class AccessScopeVisibilityTests(TestCase):
         html = response.content.decode("utf-8")
         self.assertIn(f"editSecretModal{self.secret.id}", html)
         self.assertIn(f"deleteSecretModal{self.secret.id}", html)
+
+    def test_cli_secret_scoped_policy_exposes_only_target_secret(self):
+        super_client = self.client_class()
+        super_client.force_login(User.objects.create_superuser("root4", "root4@example.com", "rootpass"))
+        response = super_client.post(
+            "/secrets/cli/policies/apply/",
+            data=json.dumps(
+                {
+                    "policy_document": json.dumps(
+                        {
+                            "rules": [
+                                {
+                                    "user": self.user.username,
+                                    "environment": self.environment.name,
+                                    "folder": self.allowed_folder.name,
+                                    "secret": self.secret.name,
+                                    "permissions": {"read": True, "write": False, "delete": False},
+                                }
+                            ]
+                        }
+                    ),
+                    "document_format": "json",
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["updated_rules"], 1)
+        self.assertEqual(response.json()["skipped_rules"], 0)
+
+        page = self.client.get("/secrets/")
+        self.assertEqual(page.status_code, 200)
+        html = page.content.decode("utf-8")
+        self.assertIn(self.secret.name, html)
+        self.assertNotIn(self.other_secret.name, html)
+
+        allowed_copy = self.client.get(f"/secrets/copy-secret/{self.secret.id}/")
+        denied_copy = self.client.get(f"/secrets/copy-secret/{self.other_secret.id}/")
+        self.assertEqual(allowed_copy.status_code, 200)
+        self.assertEqual(denied_copy.status_code, 403)
+
+    def test_ui_secret_scoped_policy_exposes_only_target_secret(self):
+        super_client = self.client_class()
+        super_client.force_login(User.objects.create_superuser("root5", "root5@example.com", "rootpass"))
+        response = super_client.post(
+            "/secrets/policy-engine/save-ui/",
+            data={
+                "user_id": self.user.id,
+                "environment_id": self.environment.id,
+                "folder_id": self.allowed_folder.id,
+                "secret_id": self.secret.id,
+                "can_read": "on",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+
+        page = self.client.get("/secrets/")
+        self.assertEqual(page.status_code, 200)
+        html = page.content.decode("utf-8")
+        self.assertIn(self.secret.name, html)
+        self.assertNotIn(self.other_secret.name, html)

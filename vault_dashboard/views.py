@@ -1555,6 +1555,13 @@ def save_access_policy_ui(request):
     folder = Folder.objects.filter(id=folder_id).first() if folder_id else None
     secret = Secret.objects.filter(id=secret_id).first() if secret_id else None
 
+    # Keep scope hierarchy consistent when narrower scope is provided.
+    if secret:
+        folder = secret.folder
+        environment = secret.folder.environment
+    elif folder and not environment:
+        environment = folder.environment
+
     can_read = bool(request.POST.get("can_read"))
     can_write = bool(request.POST.get("can_write"))
     can_delete = bool(request.POST.get("can_delete"))
