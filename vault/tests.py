@@ -5,6 +5,7 @@ from django.core.cache import cache
 from django.test import TestCase
 from django.urls import reverse
 
+from auditlogs.models import AuditLog
 from vault.crypto_utils import encrypt_root_key
 from vault.models import VaultConfig
 
@@ -42,6 +43,9 @@ class LoginAuthenticationFlowTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.url, reverse("vault_dashboard"))
         self.assertIn("_auth_user_id", self.client.session)
+        log = AuditLog.objects.filter(user=self.user, action="LOGIN", entity="WEB").order_by("-timestamp").first()
+        self.assertIsNotNone(log)
+        self.assertIn("Authenticated via username_password", log.details or "")
 
     def test_root_token_login_works(self):
         token = base64.b64encode(self.root_key).decode()
@@ -56,6 +60,9 @@ class LoginAuthenticationFlowTests(TestCase):
         self.assertEqual(response.url, reverse("vault_dashboard"))
         self.assertEqual(self.client.session.get("_auth_user_id"), str(self.superuser.id))
         self.assertEqual(self.client.session.get("vault_key"), token)
+        log = AuditLog.objects.filter(user=self.superuser, action="LOGIN", entity="WEB").order_by("-timestamp").first()
+        self.assertIsNotNone(log)
+        self.assertIn("Authenticated via root_token", log.details or "")
 
     def test_invalid_root_token_shows_error(self):
         invalid_b64_token = base64.b64encode(b"wrong-root-key-1").decode()
@@ -68,3 +75,19 @@ class LoginAuthenticationFlowTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Invalid root token.")
+
+    def test_cli_login_writes_audit_log(self):
+        response = self.client.post(
+            reverse("cli_login"),
+            data={
+                "auth_method": "username_password",
+                "username": "alice",
+                "password": "alice-pass",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json().get("ok"))
+
+        log = AuditLog.objects.filter(user=self.user, action="LOGIN", entity="CLI").order_by("-timestamp").first()
+        self.assertIsNotNone(log)
+        self.assertIn("Authenticated via username_password", log.details or "")

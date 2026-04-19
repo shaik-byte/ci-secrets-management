@@ -15,6 +15,8 @@ from django.shortcuts import redirect, render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
+from auditlogs.models import AuditLog
+
 from .crypto_utils import decrypt_root_key, encrypt_root_key
 from .models import VaultConfig
 from .security import get_client_ip, get_location_from_ip
@@ -24,6 +26,17 @@ logger = logging.getLogger(__name__)
 
 AUTH_METHOD_USERNAME_PASSWORD = "username_password"
 AUTH_METHOD_ROOT_TOKEN = "root_token"
+
+
+def _record_login_audit(request, user, auth_method, channel="WEB"):
+    login_method_label = "root_token" if auth_method == AUTH_METHOD_ROOT_TOKEN else "username_password"
+    AuditLog.objects.create(
+        user=user,
+        action="LOGIN",
+        entity=channel,
+        details=f"[{channel}] Authenticated via {login_method_label}",
+        ip_address=get_client_ip(request),
+    )
 
 
 def format_share(index: int, share_bytes: bytes) -> str:
@@ -132,6 +145,8 @@ def cli_login(request):
 
     if not user:
         return JsonResponse({"ok": False, "error": error or "Authentication failed."}, status=401)
+
+    _record_login_audit(request, user, auth_method, channel="CLI")
 
     return JsonResponse(
         {
@@ -322,6 +337,7 @@ def login_view(request):
 
         user, error = handler(request, vault)
         if user:
+            _record_login_audit(request, user, auth_method, channel="WEB")
             return redirect("vault_dashboard")
 
         return render(
