@@ -386,6 +386,17 @@ def dashboard(request):
     for env in environments:
         env.secret_value_regex = env_policy_map.get(env.id).secret_value_regex if env.id in env_policy_map else policy.secret_value_regex
         env.regex_mode = env_policy_map.get(env.id).regex_mode if env.id in env_policy_map else policy.regex_mode
+        env.can_read = _has_access(request.user, "read", environment=env)
+        env.can_write = _has_access(request.user, "write", environment=env)
+        env.can_delete = _has_access(request.user, "delete", environment=env)
+        for folder in getattr(env, "visible_folders", []):
+            folder.can_read = _has_access(request.user, "read", folder=folder)
+            folder.can_write = _has_access(request.user, "write", folder=folder)
+            folder.can_delete = _has_access(request.user, "delete", folder=folder)
+            for secret in getattr(folder, "visible_secrets", []):
+                secret.can_read = _has_access(request.user, "read", secret=secret)
+                secret.can_write = _has_access(request.user, "write", secret=secret)
+                secret.can_delete = _has_access(request.user, "delete", secret=secret)
 
     effective_access_rows = []
     for user in users:
