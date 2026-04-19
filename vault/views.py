@@ -26,20 +26,26 @@ logger = logging.getLogger(__name__)
 
 AUTH_METHOD_USERNAME_PASSWORD = "username_password"
 AUTH_METHOD_ROOT_TOKEN = "root_token"
+AUTH_CHANNEL_WEB = "WEB"
+AUTH_CHANNEL_CLI = "CLI"
+AUTH_CHANNEL_CLI_VIA_WEB = "CLI_VIA_WEB"
 
 
-def _record_login_audit(request, user, auth_method, channel="WEB"):
+def _record_login_audit(request, user, auth_method, channel=AUTH_CHANNEL_WEB):
     login_method_label = "root_token" if auth_method == AUTH_METHOD_ROOT_TOKEN else "username_password"
+    details = f"[{channel}] Authenticated via {login_method_label}"
+    if channel == AUTH_CHANNEL_CLI_VIA_WEB:
+        details += " (CLI used /login fallback)"
     AuditLog.objects.create(
         user=user,
         action="LOGIN",
         entity=channel,
-        details=f"[{channel}] Authenticated via {login_method_label}",
+        details=details,
         ip_address=get_client_ip(request),
     )
 
 
-def _record_logout_audit(request, user, channel="WEB"):
+def _record_logout_audit(request, user, channel=AUTH_CHANNEL_WEB):
     AuditLog.objects.create(
         user=user,
         action="LOGOUT",
@@ -347,7 +353,13 @@ def login_view(request):
 
         user, error = handler(request, vault)
         if user:
-            _record_login_audit(request, user, auth_method, channel="WEB")
+            requested_client_channel = (request.POST.get("client_channel") or "").strip().lower()
+            client_header = (request.headers.get("X-CIVault-Client") or "").strip().lower()
+            channel = AUTH_CHANNEL_WEB
+            if requested_client_channel == "cli" or client_header == "cli":
+                channel = AUTH_CHANNEL_CLI_VIA_WEB
+
+            _record_login_audit(request, user, auth_method, channel=channel)
             return redirect("vault_dashboard")
 
         return render(
