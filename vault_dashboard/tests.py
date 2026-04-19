@@ -184,3 +184,36 @@ class AccessScopeVisibilityTests(TestCase):
         response = self.client.get(f"/secrets/copy-secret/{self.secret.id}/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json().get("secret"), "super-secret")
+
+    def test_read_only_policy_hides_edit_and_delete_actions_for_secret(self):
+        AccessPolicy.objects.create(
+            user=self.user,
+            environment=self.environment,
+            folder=self.allowed_folder,
+            secret=self.secret,
+            can_read=True,
+            can_write=False,
+            can_delete=False,
+        )
+        response = self.client.get("/secrets/")
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode("utf-8")
+        self.assertIn(f"copySecret({self.secret.id})", html)
+        self.assertNotIn(f"editSecretModal{self.secret.id}", html)
+        self.assertNotIn(f"deleteSecretModal{self.secret.id}", html)
+
+    def test_write_and_delete_policies_show_edit_and_delete_actions_for_secret(self):
+        AccessPolicy.objects.create(
+            user=self.user,
+            environment=self.environment,
+            folder=self.allowed_folder,
+            secret=self.secret,
+            can_read=True,
+            can_write=True,
+            can_delete=True,
+        )
+        response = self.client.get("/secrets/")
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode("utf-8")
+        self.assertIn(f"editSecretModal{self.secret.id}", html)
+        self.assertIn(f"deleteSecretModal{self.secret.id}", html)

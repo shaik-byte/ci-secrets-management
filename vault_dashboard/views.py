@@ -247,16 +247,36 @@ def _visible_environments_for_user(user):
     for env in environments:
         all_folders = list(env.folders.all())
         if user.is_superuser or env.created_by_id == user.id:
+            env.can_read = True
+            env.can_write = True
+            env.can_delete = True
             for folder in all_folders:
+                folder.can_read = True
+                folder.can_write = True
+                folder.can_delete = True
                 folder.visible_secrets = list(folder.secrets.all())
+                for secret in folder.visible_secrets:
+                    secret.can_read = True
+                    secret.can_write = True
+                    secret.can_delete = True
             env.visible_folders = all_folders
             visible_environments.append(env)
             continue
 
         env_has_read_access = _has_access(user, "read", environment=env)
         if env_has_read_access:
+            env.can_read = True
+            env.can_write = _has_access(user, "write", environment=env)
+            env.can_delete = _has_access(user, "delete", environment=env)
             for folder in all_folders:
+                folder.can_read = True
+                folder.can_write = _has_access(user, "write", folder=folder)
+                folder.can_delete = _has_access(user, "delete", folder=folder)
                 folder.visible_secrets = list(folder.secrets.all())
+                for secret in folder.visible_secrets:
+                    secret.can_read = True
+                    secret.can_write = _has_access(user, "write", secret=secret)
+                    secret.can_delete = _has_access(user, "delete", secret=secret)
             env.visible_folders = all_folders
             visible_environments.append(env)
             continue
@@ -264,16 +284,33 @@ def _visible_environments_for_user(user):
         visible_folders = []
         for folder in all_folders:
             if _has_access(user, "read", folder=folder):
+                folder.can_read = True
+                folder.can_write = _has_access(user, "write", folder=folder)
+                folder.can_delete = _has_access(user, "delete", folder=folder)
                 folder.visible_secrets = list(folder.secrets.all())
+                for secret in folder.visible_secrets:
+                    secret.can_read = True
+                    secret.can_write = _has_access(user, "write", secret=secret)
+                    secret.can_delete = _has_access(user, "delete", secret=secret)
                 visible_folders.append(folder)
                 continue
 
             readable_secrets = [secret for secret in folder.secrets.all() if _has_access(user, "read", secret=secret)]
             if readable_secrets:
+                folder.can_read = True
+                folder.can_write = _has_access(user, "write", folder=folder)
+                folder.can_delete = _has_access(user, "delete", folder=folder)
                 folder.visible_secrets = readable_secrets
+                for secret in folder.visible_secrets:
+                    secret.can_read = True
+                    secret.can_write = _has_access(user, "write", secret=secret)
+                    secret.can_delete = _has_access(user, "delete", secret=secret)
                 visible_folders.append(folder)
 
         if visible_folders:
+            env.can_read = True
+            env.can_write = _has_access(user, "write", environment=env)
+            env.can_delete = _has_access(user, "delete", environment=env)
             env.visible_folders = visible_folders
             visible_environments.append(env)
 
@@ -306,9 +343,19 @@ def dashboard(request):
         if request.user.is_superuser:
             environments = Environment.objects.select_related("created_by").prefetch_related("folders__secrets").all()
             for env in environments:
+                env.can_read = True
+                env.can_write = True
+                env.can_delete = True
                 env.visible_folders = list(env.folders.all())
                 for folder in env.visible_folders:
+                    folder.can_read = True
+                    folder.can_write = True
+                    folder.can_delete = True
                     folder.visible_secrets = list(folder.secrets.all())
+                    for secret in folder.visible_secrets:
+                        secret.can_read = True
+                        secret.can_write = True
+                        secret.can_delete = True
         else:
             readable_env_ids = AccessPolicy.objects.filter(
                 user=request.user,
@@ -319,9 +366,19 @@ def dashboard(request):
                 Q(created_by=request.user) | Q(id__in=readable_env_ids)
             ).distinct().prefetch_related("folders__secrets")
             for env in environments:
+                env.can_read = True
+                env.can_write = _has_access(request.user, "write", environment=env)
+                env.can_delete = _has_access(request.user, "delete", environment=env)
                 env.visible_folders = list(env.folders.all())
                 for folder in env.visible_folders:
+                    folder.can_read = True
+                    folder.can_write = _has_access(request.user, "write", folder=folder)
+                    folder.can_delete = _has_access(request.user, "delete", folder=folder)
                     folder.visible_secrets = list(folder.secrets.all())
+                    for secret in folder.visible_secrets:
+                        secret.can_read = _has_access(request.user, "read", secret=secret)
+                        secret.can_write = _has_access(request.user, "write", secret=secret)
+                        secret.can_delete = _has_access(request.user, "delete", secret=secret)
     policy, _ = SecretPolicy.objects.get_or_create(created_by=request.user)
     policy_presets = [
         {
