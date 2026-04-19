@@ -118,6 +118,7 @@ civault policy-apply --file ./policy.yaml --format yaml
 > Note: policy rules are matched by exact names from the server (especially `user` as the exact username).  
 > If no records match, the server may process `0` rules.
 > The CLI auto-detects secret-level rules (`secret`, `secret_name`, `secretId`, etc.) and uses the secret policy endpoint automatically.
+> For older servers that do not expose the secret endpoint yet, the CLI falls back to the standard policy endpoint when it receives HTTP 404.
 
 ## Local config/session files
 

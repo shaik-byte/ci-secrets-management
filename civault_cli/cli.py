@@ -278,15 +278,34 @@ def _targets_secret_level(policy_doc: dict[str, Any]) -> bool:
     return False
 
 
+
+def _post_policy_document(
+    session: requests.Session,
+    url: str,
+    payload: dict[str, str],
+    headers: dict[str, str],
+) -> requests.Response:
+    return session.post(
+        url,
+        data=payload,
+        headers=headers,
+        timeout=20,
+        allow_redirects=True,
+    )
+
 def cmd_policy_apply(args: argparse.Namespace) -> int:
     base_url, session = _authed_session(args)
     raw, doc_format, parsed = _load_policy_document(Path(args.file), args.format)
+
+    is_secret_level = _targets_secret_level(parsed)
+    used_auto_endpoint = not args.endpoint
 
     if args.endpoint:
         endpoint = args.endpoint.strip()
     else:
         endpoint = (
             "/secrets/policy-engine/save-secret-document/"
+            if is_secret_level
             if _targets_secret_level(parsed)
             else "/secrets/policy-engine/save-document/"
         )
@@ -299,13 +318,18 @@ def cmd_policy_apply(args: argparse.Namespace) -> int:
     if csrf_token:
         headers["X-CSRFToken"] = csrf_token
 
-    response = session.post(
-        apply_url,
-        data={"policy_document": raw, "document_format": doc_format},
-        headers=headers,
-        timeout=20,
-        allow_redirects=True,
-    )
+    request_payload = {"policy_document": raw, "document_format": doc_format}
+    response = _post_policy_document(session, apply_url, request_payload, headers)
+
+    if (
+        used_auto_endpoint
+        and is_secret_level
+        and response.status_code == 404
+        and endpoint == "/secrets/policy-engine/save-secret-document/"
+    ):
+        fallback_endpoint = "/secrets/policy-engine/save-document/"
+        fallback_url = f"{base_url}{fallback_endpoint}"
+        response = _post_policy_document(session, fallback_url, request_payload, headers)
 
     if response.status_code == 200:
         body = html.unescape(response.text or "")
