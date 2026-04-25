@@ -1799,6 +1799,31 @@ def _build_scope_payload(access_policy):
     }
 
 
+def _extract_bearer_token(request):
+    auth_header = (request.headers.get("Authorization") or "").strip()
+    if not auth_header:
+        return None, "Missing Authorization header."
+    parts = auth_header.split(" ", 1)
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        return None, "Authorization header must be in format: Bearer <machine_token>."
+    token = parts[1].strip()
+    if not token:
+        return None, "Bearer token is empty."
+    return token, None
+
+
+def _machine_policy_can_read_folder(access_policy, folder):
+    if not access_policy or not access_policy.can_read:
+        return False
+    if access_policy.secret_id:
+        return bool(access_policy.secret and access_policy.secret.folder_id == folder.id)
+    if access_policy.folder_id:
+        return access_policy.folder_id == folder.id
+    if access_policy.environment_id:
+        return access_policy.environment_id == folder.environment_id
+    return True
+
+
 def _parse_policy_document(raw_document, document_format):
     if document_format not in {"json", "yaml"}:
         raise ValueError("document_format must be either 'json' or 'yaml'.")
@@ -2343,6 +2368,72 @@ def jwt_machine_login(request):
             "access": _build_scope_payload(access_policy),
         },
         status=200,
+    )
+
+
+@csrf_exempt
+@require_GET
+def api_machine_list_secrets(request):
+    token, header_error = _extract_bearer_token(request)
+    if header_error:
+        return JsonResponse({"error": header_error}, status=401)
+
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    machine_session = (
+        MachineSessionToken.objects.select_related("machine_policy", "machine_policy__access_policy")
+        .filter(token_hash=token_hash, is_active=True)
+        .first()
+    )
+    if not machine_session:
+        return JsonResponse({"error": "Invalid machine token."}, status=401)
+    if machine_session.expires_at <= timezone.now():
+        machine_session.is_active = False
+        machine_session.save(update_fields=["is_active"])
+        return JsonResponse({"error": "Machine token expired."}, status=401)
+
+    environment_name = (request.GET.get("environment") or "").strip()
+    folder_name = (request.GET.get("folder") or "").strip()
+    if not environment_name or not folder_name:
+        return JsonResponse({"error": "Both 'environment' and 'folder' are required."}, status=400)
+
+    environment = Environment.objects.filter(name=environment_name).first()
+    if not environment:
+        return JsonResponse({"error": f"Environment '{environment_name}' not found."}, status=404)
+    folder = Folder.objects.filter(name=folder_name, environment=environment).first()
+    if not folder:
+        return JsonResponse({"error": f"Folder '{folder_name}' not found in '{environment_name}'."}, status=404)
+
+    access_policy = machine_session.machine_policy.access_policy
+    if not _machine_policy_can_read_folder(access_policy, folder):
+        return JsonResponse({"error": "Machine token does not have read access to this folder."}, status=403)
+
+    secrets_queryset = Secret.objects.filter(folder=folder).order_by("id")
+    if access_policy.secret_id:
+        secrets_queryset = secrets_queryset.filter(id=access_policy.secret_id)
+
+    rows = [
+        {
+            "id": secret.id,
+            "name": secret.name,
+            "service_name": secret.service_name or "",
+            "expire_date": secret.expire_date.isoformat() if secret.expire_date else None,
+        }
+        for secret in secrets_queryset
+    ]
+
+    machine_session.last_used_at = timezone.now()
+    machine_session.save(update_fields=["last_used_at"])
+
+    return JsonResponse(
+        {
+            "ok": True,
+            "vault": "civault",
+            "environment": environment_name,
+            "folder": folder_name,
+            "count": len(rows),
+            "secrets": rows,
+            "machine_policy": machine_session.machine_policy.name,
+        }
     )
 
 

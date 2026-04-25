@@ -1,14 +1,17 @@
 import json
+import hashlib
 from unittest.mock import patch
+from datetime import timedelta
 
 import jwt
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from django.contrib.auth.models import User
 from django.test import TestCase
+from django.utils import timezone
 from cryptography.fernet import Fernet
 
-from .models import AccessPolicy, Environment, Folder, Secret, MachinePolicy, JWTWorkloadIdentity
+from .models import AccessPolicy, Environment, Folder, Secret, MachinePolicy, JWTWorkloadIdentity, MachineSessionToken
 from . import views as dashboard_views
 
 
@@ -89,6 +92,72 @@ class JwtMachineLoginDebugTests(TestCase):
         self.assertEqual(payload["error"], "JWT verification failed for all matching identities.")
         self.assertTrue(payload.get("details"))
         self.assertIn("does not match pattern", payload["details"][0])
+
+
+class MachineTokenSecretsApiTests(TestCase):
+    def setUp(self):
+        self.owner = User.objects.create_superuser(username="rootapi", email="rootapi@example.com", password="rootpass")
+        self.environment = Environment.objects.create(name="test", created_by=self.owner)
+        self.folder = Folder.objects.create(name="shaik", environment=self.environment, owner_email="rootapi@example.com")
+        self.other_folder = Folder.objects.create(name="other", environment=self.environment, owner_email="rootapi@example.com")
+        self.secret = Secret.objects.create(name="API_KEY", service_name="svc", encrypted_value=b"x", folder=self.folder)
+        self.other_secret = Secret.objects.create(name="DB_PASS", service_name="svc", encrypted_value=b"y", folder=self.other_folder)
+
+        self.access_policy = AccessPolicy.objects.create(
+            user=self.owner,
+            folder=self.folder,
+            can_read=True,
+            can_write=False,
+            can_delete=False,
+        )
+        self.machine_policy = MachinePolicy.objects.create(
+            name="api-read-only",
+            description="Machine list",
+            access_policy=self.access_policy,
+            created_by=self.owner,
+        )
+        self.raw_machine_token = "mvt_test_machine_token_123"
+        self.machine_session = MachineSessionToken.objects.create(
+            token_hash=hashlib.sha256(self.raw_machine_token.encode()).hexdigest(),
+            machine_policy=self.machine_policy,
+            expires_at=timezone.now() + timedelta(hours=1),
+            is_active=True,
+        )
+
+    def test_api_list_secrets_requires_bearer_token(self):
+        response = self.client.get("/api/secrets/list/?environment=test&folder=shaik")
+        self.assertEqual(response.status_code, 401)
+        self.assertIn("Authorization", response.json()["error"])
+
+    def test_api_list_secrets_returns_json_for_valid_machine_token(self):
+        response = self.client.get(
+            "/api/secrets/list/?environment=test&folder=shaik",
+            HTTP_AUTHORIZATION=f"Bearer {self.raw_machine_token}",
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["count"], 1)
+        self.assertEqual(payload["secrets"][0]["name"], "API_KEY")
+        self.assertEqual(payload["machine_policy"], self.machine_policy.name)
+
+    def test_api_list_secrets_rejects_expired_machine_token(self):
+        self.machine_session.expires_at = timezone.now() - timedelta(minutes=1)
+        self.machine_session.save(update_fields=["expires_at"])
+        response = self.client.get(
+            "/api/secrets/list/?environment=test&folder=shaik",
+            HTTP_AUTHORIZATION=f"Bearer {self.raw_machine_token}",
+        )
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json()["error"], "Machine token expired.")
+
+    def test_api_list_secrets_enforces_policy_scope(self):
+        response = self.client.get(
+            "/api/secrets/list/?environment=test&folder=other",
+            HTTP_AUTHORIZATION=f"Bearer {self.raw_machine_token}",
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("does not have read access", response.json()["error"])
 
 
 class AccessPolicySyncStateTests(TestCase):
