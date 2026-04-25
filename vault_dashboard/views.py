@@ -135,6 +135,7 @@ import logging
 #     return redirect("vault_dashboard")
 
 from django.shortcuts import render, redirect, get_object_or_404
+from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.http import JsonResponse, HttpResponseForbidden
@@ -155,6 +156,8 @@ import yaml
 import requests
 import jwt
 from jwt import InvalidTokenError
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 
 from .models import (
     Environment,
@@ -1768,6 +1771,17 @@ def _get_signing_key_from_jwks(jwks_url, kid):
     raise ValueError("Unable to resolve signing key from JWKS.")
 
 
+def _load_rsa_public_key_from_pem():
+    pem_path = getattr(settings, "JWKS_PUBLIC_KEY_PATH", None)
+    if not pem_path:
+        raise ValueError("JWKS_PUBLIC_KEY_PATH setting is not configured.")
+    with open(pem_path, "rb") as pem_file:
+        loaded_key = serialization.load_pem_public_key(pem_file.read())
+    if not isinstance(loaded_key, rsa.RSAPublicKey):
+        raise ValueError("Configured PEM key is not an RSA public key.")
+    return loaded_key
+
+
 def _build_scope_payload(access_policy):
     scope = "global"
     if access_policy.secret_id:
@@ -2178,11 +2192,27 @@ def jwt_machine_login(request):
     issuer = str(unverified_claims.get("iss") or "").strip()
     subject = str(unverified_claims.get("sub") or "").strip()
     audiences = _normalize_audience(unverified_claims.get("aud"))
+    algorithm = str(unverified_header.get("alg") or "").strip()
     kid = unverified_header.get("kid")
+
+    logger.info(
+        "JWT machine login attempt: iss=%s aud=%s sub=%s kid=%s alg=%s identity_name=%s",
+        issuer,
+        audiences,
+        subject,
+        kid,
+        algorithm,
+        identity_name or None,
+    )
+
     if not issuer:
         return JsonResponse({"error": "JWT 'iss' claim is required."}, status=400)
     if not audiences:
         return JsonResponse({"error": "JWT 'aud' claim is required."}, status=400)
+    if not subject:
+        return JsonResponse({"error": "JWT 'sub' claim is required."}, status=400)
+    if algorithm != "RS256":
+        return JsonResponse({"error": f"Unsupported JWT algorithm '{algorithm}'. Expected 'RS256'."}, status=400)
 
     identities = JWTWorkloadIdentity.objects.select_related("machine_policy", "machine_policy__access_policy").filter(
         issuer=issuer,
@@ -2193,33 +2223,93 @@ def jwt_machine_login(request):
         identities = identities.filter(name=identity_name)
     identities = list(identities)
     if not identities:
+        logger.warning(
+            "JWT machine login rejected: no matching active identity for iss=%s aud=%s identity_name=%s",
+            issuer,
+            audiences,
+            identity_name or None,
+        )
         return JsonResponse({"error": "No active JWT workload identity matches this token."}, status=403)
 
     verified_identity = None
     verified_claims = None
+    verification_errors = []
     for identity in identities:
         if identity.subject_pattern and not fnmatch(subject, identity.subject_pattern):
+            reason = (
+                f"identity '{identity.name}' skipped: subject '{subject}' does not match "
+                f"pattern '{identity.subject_pattern}'."
+            )
+            logger.info("JWT verify detail: %s", reason)
+            verification_errors.append(reason)
             continue
-        if not identity.jwks_url:
-            continue
+
+        resolved_jwks_url = (identity.jwks_url or "").strip()
+        if resolved_jwks_url and resolved_jwks_url.startswith("/"):
+            resolved_jwks_url = request.build_absolute_uri(resolved_jwks_url)
+
         try:
-            key = _get_signing_key_from_jwks(identity.jwks_url, kid)
+            if resolved_jwks_url:
+                key = _get_signing_key_from_jwks(resolved_jwks_url, kid)
+            else:
+                key = _load_rsa_public_key_from_pem()
+
             verified = jwt.decode(
                 token,
                 key=key,
-                algorithms=[unverified_header.get("alg", "RS256")],
+                algorithms=["RS256"],
                 audience=identity.audience,
                 issuer=identity.issuer,
                 options={"require": ["exp", "iat", "iss", "sub"]},
             )
-        except (InvalidTokenError, ValueError, requests.RequestException):
+        except FileNotFoundError:
+            reason = (
+                f"identity '{identity.name}' failed: JWKS_PUBLIC_KEY_PATH file not found "
+                "for PEM fallback verification."
+            )
+            logger.warning("JWT verify detail: %s", reason)
+            verification_errors.append(reason)
+            continue
+        except requests.RequestException as exc:
+            reason = f"identity '{identity.name}' failed: unable to fetch JWKS ({exc})."
+            logger.warning("JWT verify detail: %s", reason)
+            verification_errors.append(reason)
+            continue
+        except ValueError as exc:
+            reason = f"identity '{identity.name}' failed: {exc}."
+            logger.warning("JWT verify detail: %s", reason)
+            verification_errors.append(reason)
+            continue
+        except InvalidTokenError as exc:
+            reason = f"identity '{identity.name}' failed: token validation error ({exc})."
+            logger.info("JWT verify detail: %s", reason)
+            verification_errors.append(reason)
             continue
         verified_identity = identity
         verified_claims = verified
+        logger.info(
+            "JWT machine login verified with identity=%s policy=%s subject=%s",
+            identity.name,
+            identity.machine_policy.name,
+            verified_claims.get("sub"),
+        )
         break
 
     if not verified_identity:
-        return JsonResponse({"error": "JWT verification failed for all matching identities."}, status=403)
+        logger.warning(
+            "JWT machine login failed for iss=%s aud=%s sub=%s. details=%s",
+            issuer,
+            audiences,
+            subject,
+            verification_errors,
+        )
+        return JsonResponse(
+            {
+                "error": "JWT verification failed for all matching identities.",
+                "details": verification_errors or ["No identity was able to verify this JWT."],
+            },
+            status=403,
+        )
 
     raw_machine_token = f"mvt_{secrets.token_urlsafe(48)}"
     machine_token_hash = hashlib.sha256(raw_machine_token.encode()).hexdigest()

@@ -1,11 +1,14 @@
 import json
 from unittest.mock import patch
 
+import jwt
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 from django.contrib.auth.models import User
 from django.test import TestCase
 from cryptography.fernet import Fernet
 
-from .models import AccessPolicy, Environment, Folder, Secret
+from .models import AccessPolicy, Environment, Folder, Secret, MachinePolicy, JWTWorkloadIdentity
 from . import views as dashboard_views
 
 
@@ -23,6 +26,69 @@ class JwtLoginAliasRouteTests(TestCase):
         )
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["error"], "Field 'jwt' is required.")
+
+
+class JwtMachineLoginDebugTests(TestCase):
+    def _mint_rs256_token(self, claims: dict) -> str:
+        private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        private_pem = private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+        return jwt.encode(claims, private_pem, algorithm="RS256", headers={"kid": "kid-1"})
+
+    def test_jwt_machine_login_rejects_non_rs256_algorithms(self):
+        token = jwt.encode(
+            {"iss": "https://issuer.example.com", "sub": "svc", "aud": "vault", "exp": 4102444800, "iat": 1700000000},
+            "shared-secret",
+            algorithm="HS256",
+        )
+        response = self.client.post(
+            "/auth/jwt/login/",
+            data=json.dumps({"jwt": token}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Unsupported JWT algorithm", response.json()["error"])
+
+    def test_jwt_machine_login_returns_detailed_failure_reasons(self):
+        user = User.objects.create_superuser(username="root", email="root@example.com", password="rootpass")
+        access_policy = AccessPolicy.objects.create(user=user, can_read=True, can_write=False, can_delete=False)
+        machine_policy = MachinePolicy.objects.create(
+            name="mp-debug",
+            description="debug",
+            access_policy=access_policy,
+            created_by=user,
+        )
+        JWTWorkloadIdentity.objects.create(
+            name="debug-identity",
+            issuer="https://issuer.example.com",
+            audience="vault",
+            subject_pattern="system:serviceaccount:*",
+            jwks_url="https://issuer.example.com/.well-known/jwks.json",
+            machine_policy=machine_policy,
+            is_active=True,
+        )
+        token = self._mint_rs256_token(
+            {
+                "iss": "https://issuer.example.com",
+                "sub": "user:local-dev",
+                "aud": "vault",
+                "exp": 4102444800,
+                "iat": 1700000000,
+            }
+        )
+        response = self.client.post(
+            "/auth/jwt/login/",
+            data=json.dumps({"jwt": token}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 403)
+        payload = response.json()
+        self.assertEqual(payload["error"], "JWT verification failed for all matching identities.")
+        self.assertTrue(payload.get("details"))
+        self.assertIn("does not match pattern", payload["details"][0])
 
 
 class AccessPolicySyncStateTests(TestCase):
