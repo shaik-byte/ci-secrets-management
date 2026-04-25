@@ -17,6 +17,7 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path
 from django.urls import path, include
+from vault_dashboard.views import jwt_machine_login
 
 
 urlpatterns = [
@@ -24,6 +25,7 @@ urlpatterns = [
     path('', include('vault.urls')),
     # path('dashboard/', include('vault_dashboard.urls')),
     path('secrets/', include('vault_dashboard.urls')),
+    path('auth/jwt/login/', jwt_machine_login),
     path('notifications/', include('notifications.urls')),
     path('audit-logs/', include('auditlogs.urls')),
     

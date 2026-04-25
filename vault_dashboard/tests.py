@@ -9,6 +9,22 @@ from .models import AccessPolicy, Environment, Folder, Secret
 from . import views as dashboard_views
 
 
+class JwtLoginAliasRouteTests(TestCase):
+    def test_auth_jwt_login_alias_rejects_non_post(self):
+        response = self.client.get("/auth/jwt/login/")
+        self.assertEqual(response.status_code, 405)
+        self.assertEqual(response.json()["error"], "POST method required.")
+
+    def test_auth_jwt_login_alias_accepts_same_payload_handling(self):
+        response = self.client.post(
+            "/auth/jwt/login/",
+            data=json.dumps({"identity_name": "demo"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["error"], "Field 'jwt' is required.")
+
+
 class AccessPolicySyncStateTests(TestCase):
     def setUp(self):
         self.admin = User.objects.create_superuser(username="root", email="root@example.com", password="rootpass")
