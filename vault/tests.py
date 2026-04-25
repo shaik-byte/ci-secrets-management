@@ -1,9 +1,14 @@
 import base64
+import os
+import tempfile
 
 from django.contrib.auth.models import User
 from django.core.cache import cache
 from django.test import TestCase
+from django.test.utils import override_settings
 from django.urls import reverse
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 
 from auditlogs.models import AuditLog
 from vault.crypto_utils import encrypt_root_key
@@ -137,3 +142,50 @@ class LoginAuthenticationFlowTests(TestCase):
         log = AuditLog.objects.filter(user=self.user, action="LOGOUT", entity="CLI").order_by("-timestamp").first()
         self.assertIsNotNone(log)
         self.assertIn("Logged out", log.details or "")
+
+
+class JwksEndpointTests(TestCase):
+    def _write_public_key(self) -> str:
+        private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        public_pem = private_key.public_key().public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+        with tempfile.NamedTemporaryFile(mode="wb", suffix=".pem", delete=False) as pem_file:
+            pem_file.write(public_pem)
+            return pem_file.name
+
+    def test_jwks_endpoint_returns_rsa_key_fields(self):
+        pem_path = self._write_public_key()
+        try:
+            with override_settings(JWKS_PUBLIC_KEY_PATH=pem_path):
+                response = self.client.get("/.well-known/jwks.json")
+        finally:
+            os.unlink(pem_path)
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertIn("keys", payload)
+        self.assertEqual(len(payload["keys"]), 1)
+        key = payload["keys"][0]
+        self.assertEqual(key["kty"], "RSA")
+        self.assertEqual(key["use"], "sig")
+        self.assertEqual(key["alg"], "RS256")
+        self.assertTrue(key["kid"])
+        self.assertTrue(key["n"])
+        self.assertTrue(key["e"])
+
+    def test_jwks_endpoint_kid_is_stable_for_same_key(self):
+        pem_path = self._write_public_key()
+        try:
+            with override_settings(JWKS_PUBLIC_KEY_PATH=pem_path):
+                first = self.client.get("/.well-known/jwks.json")
+                second = self.client.get("/.well-known/jwks.json")
+        finally:
+            os.unlink(pem_path)
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        first_kid = first.json()["keys"][0]["kid"]
+        second_kid = second.json()["keys"][0]["kid"]
+        self.assertEqual(first_kid, second_kid)

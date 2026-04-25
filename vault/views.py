@@ -3,17 +3,21 @@ import hmac
 import json
 import logging
 import os
+import hashlib
 
 from Crypto.Protocol.SecretSharing import Shamir
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.models import User
 from django.contrib.auth.decorators import login_required
+from django.conf import settings
 from django.core.cache import cache
 from django.db import connections
 from django.http import HttpResponseForbidden, JsonResponse
 from django.shortcuts import redirect, render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 
 from auditlogs.models import AuditLog
 
@@ -29,6 +33,49 @@ AUTH_METHOD_ROOT_TOKEN = "root_token"
 AUTH_CHANNEL_WEB = "WEB"
 AUTH_CHANNEL_CLI = "CLI"
 AUTH_CHANNEL_CLI_VIA_WEB = "CLI_VIA_WEB"
+
+
+def _base64url_uint(value: int) -> str:
+    byte_length = max(1, (value.bit_length() + 7) // 8)
+    raw = value.to_bytes(byte_length, byteorder="big")
+    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+
+def _jwks_public_key_path() -> str:
+    return getattr(settings, "JWKS_PUBLIC_KEY_PATH", os.path.join(settings.BASE_DIR, "public_key.pem"))
+
+
+def _rsa_public_key_to_jwk(public_key: rsa.RSAPublicKey) -> dict:
+    numbers = public_key.public_numbers()
+    der_bytes = public_key.public_bytes(
+        encoding=serialization.Encoding.DER,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    kid = base64.urlsafe_b64encode(hashlib.sha256(der_bytes).digest()).decode().rstrip("=")
+    return {
+        "kty": "RSA",
+        "use": "sig",
+        "alg": "RS256",
+        "kid": kid,
+        "n": _base64url_uint(numbers.n),
+        "e": _base64url_uint(numbers.e),
+    }
+
+
+def jwks_view(request):
+    public_key_path = _jwks_public_key_path()
+    try:
+        with open(public_key_path, "rb") as pem_file:
+            public_key = serialization.load_pem_public_key(pem_file.read())
+    except FileNotFoundError:
+        return JsonResponse({"error": f"Public key file not found: {public_key_path}"}, status=404)
+    except ValueError:
+        return JsonResponse({"error": "Invalid PEM public key format."}, status=400)
+
+    if not isinstance(public_key, rsa.RSAPublicKey):
+        return JsonResponse({"error": "Only RSA public keys are supported."}, status=400)
+
+    return JsonResponse({"keys": [_rsa_public_key_to_jwk(public_key)]})
 
 
 def _record_login_audit(request, user, auth_method, channel=AUTH_CHANNEL_WEB):
