@@ -3,6 +3,7 @@ from . import views
 
 urlpatterns = [
     path('', views.home, name='home'),
+    path('.well-known/jwks.json', views.jwks_view, name='jwks'),
     path('initialize/', views.initialize_vault, name='initialize'),
     path('unseal/', views.unseal_vault, name='unseal'),
     path('login/', views.login_view, name='login'),

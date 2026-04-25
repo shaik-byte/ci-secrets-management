@@ -1,12 +1,163 @@
 import json
+import hashlib
 from unittest.mock import patch
+from datetime import timedelta
 
+import jwt
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 from django.contrib.auth.models import User
 from django.test import TestCase
+from django.utils import timezone
 from cryptography.fernet import Fernet
 
-from .models import AccessPolicy, Environment, Folder, Secret
+from .models import AccessPolicy, Environment, Folder, Secret, MachinePolicy, JWTWorkloadIdentity, MachineSessionToken
 from . import views as dashboard_views
+
+
+class JwtLoginAliasRouteTests(TestCase):
+    def test_auth_jwt_login_alias_rejects_non_post(self):
+        response = self.client.get("/auth/jwt/login/")
+        self.assertEqual(response.status_code, 405)
+        self.assertEqual(response.json()["error"], "POST method required.")
+
+    def test_auth_jwt_login_alias_accepts_same_payload_handling(self):
+        response = self.client.post(
+            "/auth/jwt/login/",
+            data=json.dumps({"identity_name": "demo"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["error"], "Field 'jwt' is required.")
+
+
+class JwtMachineLoginDebugTests(TestCase):
+    def _mint_rs256_token(self, claims: dict) -> str:
+        private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        private_pem = private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+        return jwt.encode(claims, private_pem, algorithm="RS256", headers={"kid": "kid-1"})
+
+    def test_jwt_machine_login_rejects_non_rs256_algorithms(self):
+        token = jwt.encode(
+            {"iss": "https://issuer.example.com", "sub": "svc", "aud": "vault", "exp": 4102444800, "iat": 1700000000},
+            "shared-secret",
+            algorithm="HS256",
+        )
+        response = self.client.post(
+            "/auth/jwt/login/",
+            data=json.dumps({"jwt": token}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Unsupported JWT algorithm", response.json()["error"])
+
+    def test_jwt_machine_login_returns_detailed_failure_reasons(self):
+        user = User.objects.create_superuser(username="root", email="root@example.com", password="rootpass")
+        access_policy = AccessPolicy.objects.create(user=user, can_read=True, can_write=False, can_delete=False)
+        machine_policy = MachinePolicy.objects.create(
+            name="mp-debug",
+            description="debug",
+            access_policy=access_policy,
+            created_by=user,
+        )
+        JWTWorkloadIdentity.objects.create(
+            name="debug-identity",
+            issuer="https://issuer.example.com",
+            audience="vault",
+            subject_pattern="system:serviceaccount:*",
+            jwks_url="https://issuer.example.com/.well-known/jwks.json",
+            machine_policy=machine_policy,
+            is_active=True,
+        )
+        token = self._mint_rs256_token(
+            {
+                "iss": "https://issuer.example.com",
+                "sub": "user:local-dev",
+                "aud": "vault",
+                "exp": 4102444800,
+                "iat": 1700000000,
+            }
+        )
+        response = self.client.post(
+            "/auth/jwt/login/",
+            data=json.dumps({"jwt": token}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 403)
+        payload = response.json()
+        self.assertEqual(payload["error"], "JWT verification failed for all matching identities.")
+        self.assertTrue(payload.get("details"))
+        self.assertIn("does not match pattern", payload["details"][0])
+
+
+class MachineTokenSecretsApiTests(TestCase):
+    def setUp(self):
+        self.owner = User.objects.create_superuser(username="rootapi", email="rootapi@example.com", password="rootpass")
+        self.environment = Environment.objects.create(name="test", created_by=self.owner)
+        self.folder = Folder.objects.create(name="shaik", environment=self.environment, owner_email="rootapi@example.com")
+        self.other_folder = Folder.objects.create(name="other", environment=self.environment, owner_email="rootapi@example.com")
+        self.secret = Secret.objects.create(name="API_KEY", service_name="svc", encrypted_value=b"x", folder=self.folder)
+        self.other_secret = Secret.objects.create(name="DB_PASS", service_name="svc", encrypted_value=b"y", folder=self.other_folder)
+
+        self.access_policy = AccessPolicy.objects.create(
+            user=self.owner,
+            folder=self.folder,
+            can_read=True,
+            can_write=False,
+            can_delete=False,
+        )
+        self.machine_policy = MachinePolicy.objects.create(
+            name="api-read-only",
+            description="Machine list",
+            access_policy=self.access_policy,
+            created_by=self.owner,
+        )
+        self.raw_machine_token = "mvt_test_machine_token_123"
+        self.machine_session = MachineSessionToken.objects.create(
+            token_hash=hashlib.sha256(self.raw_machine_token.encode()).hexdigest(),
+            machine_policy=self.machine_policy,
+            expires_at=timezone.now() + timedelta(hours=1),
+            is_active=True,
+        )
+
+    def test_api_list_secrets_requires_bearer_token(self):
+        response = self.client.get("/api/secrets/list/?environment=test&folder=shaik")
+        self.assertEqual(response.status_code, 401)
+        self.assertIn("Authorization", response.json()["error"])
+
+    def test_api_list_secrets_returns_json_for_valid_machine_token(self):
+        response = self.client.get(
+            "/api/secrets/list/?environment=test&folder=shaik",
+            HTTP_AUTHORIZATION=f"Bearer {self.raw_machine_token}",
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["count"], 1)
+        self.assertEqual(payload["secrets"][0]["name"], "API_KEY")
+        self.assertEqual(payload["machine_policy"], self.machine_policy.name)
+
+    def test_api_list_secrets_rejects_expired_machine_token(self):
+        self.machine_session.expires_at = timezone.now() - timedelta(minutes=1)
+        self.machine_session.save(update_fields=["expires_at"])
+        response = self.client.get(
+            "/api/secrets/list/?environment=test&folder=shaik",
+            HTTP_AUTHORIZATION=f"Bearer {self.raw_machine_token}",
+        )
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json()["error"], "Machine token expired.")
+
+    def test_api_list_secrets_enforces_policy_scope(self):
+        response = self.client.get(
+            "/api/secrets/list/?environment=test&folder=other",
+            HTTP_AUTHORIZATION=f"Bearer {self.raw_machine_token}",
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("does not have read access", response.json()["error"])
 
 
 class AccessPolicySyncStateTests(TestCase):

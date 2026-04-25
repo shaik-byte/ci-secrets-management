@@ -135,6 +135,7 @@ import logging
 #     return redirect("vault_dashboard")
 
 from django.shortcuts import render, redirect, get_object_or_404
+from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.http import JsonResponse, HttpResponseForbidden
@@ -155,6 +156,8 @@ import yaml
 import requests
 import jwt
 from jwt import InvalidTokenError
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 
 from .models import (
     Environment,
@@ -1768,6 +1771,17 @@ def _get_signing_key_from_jwks(jwks_url, kid):
     raise ValueError("Unable to resolve signing key from JWKS.")
 
 
+def _load_rsa_public_key_from_pem():
+    pem_path = getattr(settings, "JWKS_PUBLIC_KEY_PATH", None)
+    if not pem_path:
+        raise ValueError("JWKS_PUBLIC_KEY_PATH setting is not configured.")
+    with open(pem_path, "rb") as pem_file:
+        loaded_key = serialization.load_pem_public_key(pem_file.read())
+    if not isinstance(loaded_key, rsa.RSAPublicKey):
+        raise ValueError("Configured PEM key is not an RSA public key.")
+    return loaded_key
+
+
 def _build_scope_payload(access_policy):
     scope = "global"
     if access_policy.secret_id:
@@ -1783,6 +1797,31 @@ def _build_scope_payload(access_policy):
         "can_write": access_policy.can_write,
         "can_delete": access_policy.can_delete,
     }
+
+
+def _extract_bearer_token(request):
+    auth_header = (request.headers.get("Authorization") or "").strip()
+    if not auth_header:
+        return None, "Missing Authorization header."
+    parts = auth_header.split(" ", 1)
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        return None, "Authorization header must be in format: Bearer <machine_token>."
+    token = parts[1].strip()
+    if not token:
+        return None, "Bearer token is empty."
+    return token, None
+
+
+def _machine_policy_can_read_folder(access_policy, folder):
+    if not access_policy or not access_policy.can_read:
+        return False
+    if access_policy.secret_id:
+        return bool(access_policy.secret and access_policy.secret.folder_id == folder.id)
+    if access_policy.folder_id:
+        return access_policy.folder_id == folder.id
+    if access_policy.environment_id:
+        return access_policy.environment_id == folder.environment_id
+    return True
 
 
 def _parse_policy_document(raw_document, document_format):
@@ -2178,11 +2217,27 @@ def jwt_machine_login(request):
     issuer = str(unverified_claims.get("iss") or "").strip()
     subject = str(unverified_claims.get("sub") or "").strip()
     audiences = _normalize_audience(unverified_claims.get("aud"))
+    algorithm = str(unverified_header.get("alg") or "").strip()
     kid = unverified_header.get("kid")
+
+    logger.info(
+        "JWT machine login attempt: iss=%s aud=%s sub=%s kid=%s alg=%s identity_name=%s",
+        issuer,
+        audiences,
+        subject,
+        kid,
+        algorithm,
+        identity_name or None,
+    )
+
     if not issuer:
         return JsonResponse({"error": "JWT 'iss' claim is required."}, status=400)
     if not audiences:
         return JsonResponse({"error": "JWT 'aud' claim is required."}, status=400)
+    if not subject:
+        return JsonResponse({"error": "JWT 'sub' claim is required."}, status=400)
+    if algorithm != "RS256":
+        return JsonResponse({"error": f"Unsupported JWT algorithm '{algorithm}'. Expected 'RS256'."}, status=400)
 
     identities = JWTWorkloadIdentity.objects.select_related("machine_policy", "machine_policy__access_policy").filter(
         issuer=issuer,
@@ -2193,33 +2248,93 @@ def jwt_machine_login(request):
         identities = identities.filter(name=identity_name)
     identities = list(identities)
     if not identities:
+        logger.warning(
+            "JWT machine login rejected: no matching active identity for iss=%s aud=%s identity_name=%s",
+            issuer,
+            audiences,
+            identity_name or None,
+        )
         return JsonResponse({"error": "No active JWT workload identity matches this token."}, status=403)
 
     verified_identity = None
     verified_claims = None
+    verification_errors = []
     for identity in identities:
         if identity.subject_pattern and not fnmatch(subject, identity.subject_pattern):
+            reason = (
+                f"identity '{identity.name}' skipped: subject '{subject}' does not match "
+                f"pattern '{identity.subject_pattern}'."
+            )
+            logger.info("JWT verify detail: %s", reason)
+            verification_errors.append(reason)
             continue
-        if not identity.jwks_url:
-            continue
+
+        resolved_jwks_url = (identity.jwks_url or "").strip()
+        if resolved_jwks_url and resolved_jwks_url.startswith("/"):
+            resolved_jwks_url = request.build_absolute_uri(resolved_jwks_url)
+
         try:
-            key = _get_signing_key_from_jwks(identity.jwks_url, kid)
+            if resolved_jwks_url:
+                key = _get_signing_key_from_jwks(resolved_jwks_url, kid)
+            else:
+                key = _load_rsa_public_key_from_pem()
+
             verified = jwt.decode(
                 token,
                 key=key,
-                algorithms=[unverified_header.get("alg", "RS256")],
+                algorithms=["RS256"],
                 audience=identity.audience,
                 issuer=identity.issuer,
                 options={"require": ["exp", "iat", "iss", "sub"]},
             )
-        except (InvalidTokenError, ValueError, requests.RequestException):
+        except FileNotFoundError:
+            reason = (
+                f"identity '{identity.name}' failed: JWKS_PUBLIC_KEY_PATH file not found "
+                "for PEM fallback verification."
+            )
+            logger.warning("JWT verify detail: %s", reason)
+            verification_errors.append(reason)
+            continue
+        except requests.RequestException as exc:
+            reason = f"identity '{identity.name}' failed: unable to fetch JWKS ({exc})."
+            logger.warning("JWT verify detail: %s", reason)
+            verification_errors.append(reason)
+            continue
+        except ValueError as exc:
+            reason = f"identity '{identity.name}' failed: {exc}."
+            logger.warning("JWT verify detail: %s", reason)
+            verification_errors.append(reason)
+            continue
+        except InvalidTokenError as exc:
+            reason = f"identity '{identity.name}' failed: token validation error ({exc})."
+            logger.info("JWT verify detail: %s", reason)
+            verification_errors.append(reason)
             continue
         verified_identity = identity
         verified_claims = verified
+        logger.info(
+            "JWT machine login verified with identity=%s policy=%s subject=%s",
+            identity.name,
+            identity.machine_policy.name,
+            verified_claims.get("sub"),
+        )
         break
 
     if not verified_identity:
-        return JsonResponse({"error": "JWT verification failed for all matching identities."}, status=403)
+        logger.warning(
+            "JWT machine login failed for iss=%s aud=%s sub=%s. details=%s",
+            issuer,
+            audiences,
+            subject,
+            verification_errors,
+        )
+        return JsonResponse(
+            {
+                "error": "JWT verification failed for all matching identities.",
+                "details": verification_errors or ["No identity was able to verify this JWT."],
+            },
+            status=403,
+        )
 
     raw_machine_token = f"mvt_{secrets.token_urlsafe(48)}"
     machine_token_hash = hashlib.sha256(raw_machine_token.encode()).hexdigest()
@@ -2253,6 +2368,72 @@ def jwt_machine_login(request):
             "access": _build_scope_payload(access_policy),
         },
         status=200,
+    )
+
+
+@csrf_exempt
+@require_GET
+def api_machine_list_secrets(request):
+    token, header_error = _extract_bearer_token(request)
+    if header_error:
+        return JsonResponse({"error": header_error}, status=401)
+
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    machine_session = (
+        MachineSessionToken.objects.select_related("machine_policy", "machine_policy__access_policy")
+        .filter(token_hash=token_hash, is_active=True)
+        .first()
+    )
+    if not machine_session:
+        return JsonResponse({"error": "Invalid machine token."}, status=401)
+    if machine_session.expires_at <= timezone.now():
+        machine_session.is_active = False
+        machine_session.save(update_fields=["is_active"])
+        return JsonResponse({"error": "Machine token expired."}, status=401)
+
+    environment_name = (request.GET.get("environment") or "").strip()
+    folder_name = (request.GET.get("folder") or "").strip()
+    if not environment_name or not folder_name:
+        return JsonResponse({"error": "Both 'environment' and 'folder' are required."}, status=400)
+
+    environment = Environment.objects.filter(name=environment_name).first()
+    if not environment:
+        return JsonResponse({"error": f"Environment '{environment_name}' not found."}, status=404)
+    folder = Folder.objects.filter(name=folder_name, environment=environment).first()
+    if not folder:
+        return JsonResponse({"error": f"Folder '{folder_name}' not found in '{environment_name}'."}, status=404)
+
+    access_policy = machine_session.machine_policy.access_policy
+    if not _machine_policy_can_read_folder(access_policy, folder):
+        return JsonResponse({"error": "Machine token does not have read access to this folder."}, status=403)
+
+    secrets_queryset = Secret.objects.filter(folder=folder).order_by("id")
+    if access_policy.secret_id:
+        secrets_queryset = secrets_queryset.filter(id=access_policy.secret_id)
+
+    rows = [
+        {
+            "id": secret.id,
+            "name": secret.name,
+            "service_name": secret.service_name or "",
+            "expire_date": secret.expire_date.isoformat() if secret.expire_date else None,
+        }
+        for secret in secrets_queryset
+    ]
+
+    machine_session.last_used_at = timezone.now()
+    machine_session.save(update_fields=["last_used_at"])
+
+    return JsonResponse(
+        {
+            "ok": True,
+            "vault": "civault",
+            "environment": environment_name,
+            "folder": folder_name,
+            "count": len(rows),
+            "secrets": rows,
+            "machine_policy": machine_session.machine_policy.name,
+        }
     )
 
 
