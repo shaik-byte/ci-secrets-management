@@ -1829,11 +1829,22 @@ def _apply_access_policy_rules(rules):
     updated = 0
     skipped = 0
     for rule in rules:
-        username = (rule.get("user") or "").strip()
+        username = (
+            rule.get("user")
+            or rule.get("username")
+            or rule.get("new_username")
+            or rule.get("new user")
+            or ""
+        ).strip()
         if not username:
             skipped += 1
             continue
-        password = (rule.get("password") or rule.get("new_password") or "").strip()
+        password = (
+            rule.get("password")
+            or rule.get("new_password")
+            or rule.get("new password")
+            or ""
+        ).strip()
         target_user = User.objects.filter(username__iexact=username).first()
         if not target_user:
             if not password:
