@@ -137,3 +137,25 @@ class LoginAuthenticationFlowTests(TestCase):
         log = AuditLog.objects.filter(user=self.user, action="LOGOUT", entity="CLI").order_by("-timestamp").first()
         self.assertIsNotNone(log)
         self.assertIn("Logged out", log.details or "")
+
+
+class VaultInitializationTests(TestCase):
+    def test_initialize_displays_root_token_with_shares(self):
+        response = self.client.post(
+            reverse("initialize"),
+            {
+                "total_shares": "5",
+                "threshold": "3",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "show_shares.html")
+        self.assertContains(response, "Root token")
+
+        root_token = response.context["root_token"]
+        decoded_root_key = base64.b64decode(root_token.encode())
+        self.assertEqual(len(decoded_root_key), 16)
+
+        shares = response.context["shares"]
+        self.assertEqual(len(shares), 5)

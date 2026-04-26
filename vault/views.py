@@ -249,13 +249,19 @@ def initialize_vault(request):
         )
 
         shares = [format_share(idx, share) for idx, share in Shamir.split(threshold, total_shares, root_key)]
+        root_token = base64.b64encode(root_key).decode()
 
         logger.info("Vault initialized with Shamir shares", extra={"total_shares": total_shares, "threshold": threshold})
 
         return render(
             request,
             "show_shares.html",
-            {"shares": shares, "threshold": threshold, "total_shares": total_shares},
+            {
+                "shares": shares,
+                "threshold": threshold,
+                "total_shares": total_shares,
+                "root_token": root_token,
+            },
         )
 
     return render(request, "initialize.html")
