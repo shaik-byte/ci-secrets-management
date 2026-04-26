@@ -15,6 +15,32 @@ from vault.crypto_utils import encrypt_root_key
 from vault.models import VaultConfig
 
 
+class VaultInitializationTests(TestCase):
+    def setUp(self):
+        cache.set("vault_restart_seal_initialized", True, None)
+        cache.set("vault_hard_sealed", False, None)
+
+    def test_initialize_displays_root_token_and_shamir_shares(self):
+        response = self.client.post(
+            reverse("initialize"),
+            {
+                "total_shares": 5,
+                "threshold": 3,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Root Token (for root login)")
+
+        root_token = response.context.get("root_token")
+        self.assertIsNotNone(root_token)
+        decoded_root_key = base64.b64decode(root_token.encode())
+        self.assertEqual(len(decoded_root_key), 16)
+
+        shares = response.context.get("shares", [])
+        self.assertEqual(len(shares), 5)
+
+
 class LoginAuthenticationFlowTests(TestCase):
     def setUp(self):
         cache.set("vault_restart_seal_initialized", True, None)
