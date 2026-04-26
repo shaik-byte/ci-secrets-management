@@ -22,10 +22,26 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = 'django-insecure-v84($l$9*xr36q!=7ncq-$krj&)^cntdb)528y^a2j1k4&#6n$'
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+def get_bool_env(name: str, default: bool) -> bool:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    return raw_value.strip().lower() in {"1", "true", "yes", "on"}
 
-ALLOWED_HOSTS = []
+
+def get_list_env(name: str, default: list[str]) -> list[str]:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    return [item.strip() for item in raw_value.split(",") if item.strip()]
+
+
+# SECURITY WARNING: don't run with debug turned on in production!
+DEBUG = get_bool_env("DJANGO_DEBUG", True)
+
+# Set comma-separated hostnames/IPs in DJANGO_ALLOWED_HOSTS.
+# Example: DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1,10.0.0.25,ci-vault.example.com
+ALLOWED_HOSTS = get_list_env("DJANGO_ALLOWED_HOSTS", ["localhost", "127.0.0.1", "[::1]"])
 
 VAULT_KEK = "dZvKFRmg_ojIQjulhJlFsJzuVILUlRoP0XJ26ATBd_k="
 
