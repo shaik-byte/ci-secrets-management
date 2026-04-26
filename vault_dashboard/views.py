@@ -1845,12 +1845,6 @@ def _apply_access_policy_rules(rules):
             or rule.get("new password")
             or ""
         ).strip()
-        target_user = User.objects.filter(username__iexact=username).first()
-        if not target_user:
-            if not password:
-                skipped += 1
-                continue
-            target_user = User.objects.create_user(username=username, password=password)
 
         environment_name = (rule.get("environment") or "").strip()
         folder_name = (rule.get("folder") or "").strip()
@@ -1885,6 +1879,13 @@ def _apply_access_policy_rules(rules):
                 skipped += 1
                 continue
             secret = secret_matches.first()
+
+        target_user = User.objects.filter(username__iexact=username).first()
+        if not target_user:
+            if not password:
+                skipped += 1
+                continue
+            target_user = User.objects.create_user(username=username, password=password)
 
         permissions = rule.get("permissions") or {}
         AccessPolicy.objects.update_or_create(

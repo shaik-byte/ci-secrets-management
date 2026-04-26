@@ -574,3 +574,28 @@ class AccessScopeVisibilityTests(TestCase):
                 can_read=True,
             ).exists()
         )
+
+    def test_policy_document_does_not_create_user_when_rule_scope_is_invalid(self):
+        super_client = self.client_class()
+        super_client.force_login(User.objects.create_superuser("root11", "root11@example.com", "rootpass"))
+
+        document = {
+            "rules": [
+                {
+                    "new_username": "orphaneduser",
+                    "new_password": "orphanedpass",
+                    "environment": "does-not-exist",
+                    "permissions": {"read": True},
+                }
+            ]
+        }
+        response = super_client.post(
+            "/secrets/policy-engine/save-document/",
+            data={
+                "policy_document": json.dumps(document),
+                "document_format": "json",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(User.objects.filter(username="orphaneduser").exists())
+        self.assertEqual(AccessPolicy.objects.count(), 0)
