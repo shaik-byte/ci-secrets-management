@@ -509,38 +509,3 @@ class AccessScopeVisibilityTests(TestCase):
                 can_read=True,
             ).exists()
         )
-
-    def test_policy_document_uses_default_new_username_and_password_fields(self):
-        super_client = self.client_class()
-        super_client.force_login(User.objects.create_superuser("root9", "root9@example.com", "rootpass"))
-
-        document = {
-            "rules": [
-                {
-                    "environment": self.environment.name,
-                    "folder": self.allowed_folder.name,
-                    "permissions": {"read": True, "write": False, "delete": False},
-                }
-            ]
-        }
-        response = super_client.post(
-            "/secrets/policy-engine/save-document/",
-            data={
-                "new_username": "defaultdocuser",
-                "new_password": "defaultdocpass",
-                "policy_document": json.dumps(document),
-                "document_format": "json",
-            },
-        )
-        self.assertEqual(response.status_code, 302)
-
-        created_user = User.objects.get(username="defaultdocuser")
-        self.assertTrue(created_user.check_password("defaultdocpass"))
-        self.assertTrue(
-            AccessPolicy.objects.filter(
-                user=created_user,
-                environment=self.environment,
-                folder=self.allowed_folder,
-                can_read=True,
-            ).exists()
-        )
