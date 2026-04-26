@@ -1840,6 +1840,7 @@ def _apply_access_policy_rules(rules, default_username="", default_password=""):
         if not username:
             skipped += 1
             continue
+        password = (rule.get("password") or rule.get("new_password") or "").strip()
         password = (rule.get("password") or rule.get("new_password") or default_password or "").strip()
         target_user = User.objects.filter(username__iexact=username).first()
         if not target_user:
