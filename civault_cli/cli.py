@@ -333,7 +333,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     configure = subparsers.add_parser("configure", help="Configure the civault server URL")
-    configure.add_argument("--url", required=True, help="Base URL, e.g. http://127.0.0.1:8000")
+    configure.add_argument("--url", required=True, help="Base URL, e.g. http://10.0.0.25:9001")
     configure.set_defaults(func=cmd_configure)
 
     show_config = subparsers.add_parser("show-config", help="Print current civault configuration")

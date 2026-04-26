@@ -100,12 +100,24 @@ python manage.py migrate
 ### 6️⃣ Run Development Server
 
 ```bash
-python manage.py runserver localhost:8000 
+# optional (recommended for non-localhost access):
+export DJANGO_ALLOWED_HOSTS="*"
+
+# bind to any interface and choose your own port
+python manage.py runserver 0.0.0.0:8000
 ```
 
 Server will run at:
 
-http://127.0.0.1:8000/ or localhost:8000 
+- `http://127.0.0.1:8000/` (local machine)
+- `http://<your-server-ip>:8000/` (remote machine in same network/VPC)
+
+You can change the IP and port at runtime, for example:
+
+```bash
+python manage.py runserver 10.0.0.25:9001
+python manage.py runserver 0.0.0.0:5000
+```
 
 ---
 
@@ -132,6 +144,7 @@ pytz>=2024.1
 - Do not expose SECRET_KEY publicly
 - Use environment variables in production
 - Set `DEBUG = False` in production
+- Set `DJANGO_ALLOWED_HOSTS` to explicit DNS/IP allow-list in production (avoid `*` on public internet)
 - Use PostgreSQL for production deployment
 
 ---
@@ -267,7 +280,7 @@ All Vault operations for remote access should be executed via the installed `civ
 
 ```bash
 # Configure vault URL (required first step)
-civault configure --url http://127.0.0.1:8000
+civault configure --url http://<server-ip>:<port>
 
 # Login (username/password)
 civault login --username admin --password <PASSWORD>
