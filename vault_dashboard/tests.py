@@ -510,7 +510,7 @@ class AccessScopeVisibilityTests(TestCase):
             ).exists()
         )
 
-    def test_policy_document_uses_default_new_username_and_password_fields(self):
+    def test_policy_document_requires_user_in_each_rule(self):
         super_client = self.client_class()
         super_client.force_login(User.objects.create_superuser("root9", "root9@example.com", "rootpass"))
 
@@ -526,19 +526,14 @@ class AccessScopeVisibilityTests(TestCase):
         response = super_client.post(
             "/secrets/policy-engine/save-document/",
             data={
-                "new_username": "defaultdocuser",
-                "new_password": "defaultdocpass",
                 "policy_document": json.dumps(document),
                 "document_format": "json",
             },
         )
         self.assertEqual(response.status_code, 302)
-
-        created_user = User.objects.get(username="defaultdocuser")
-        self.assertTrue(created_user.check_password("defaultdocpass"))
-        self.assertTrue(
+        self.assertFalse(User.objects.filter(username="defaultdocuser").exists())
+        self.assertFalse(
             AccessPolicy.objects.filter(
-                user=created_user,
                 environment=self.environment,
                 folder=self.allowed_folder,
                 can_read=True,
