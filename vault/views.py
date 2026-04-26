@@ -4,16 +4,19 @@ import json
 import logging
 import os
 import hashlib
+import secrets
 
 from Crypto.Protocol.SecretSharing import Shamir
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.models import User
 from django.contrib.auth.decorators import login_required
 from django.conf import settings
+from django.contrib.auth.hashers import make_password, check_password
 from django.core.cache import cache
 from django.db import connections
 from django.http import HttpResponseForbidden, JsonResponse
 from django.shortcuts import redirect, render
+from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from cryptography.hazmat.primitives import serialization
@@ -33,6 +36,25 @@ AUTH_METHOD_ROOT_TOKEN = "root_token"
 AUTH_CHANNEL_WEB = "WEB"
 AUTH_CHANNEL_CLI = "CLI"
 AUTH_CHANNEL_CLI_VIA_WEB = "CLI_VIA_WEB"
+ROOT_SESSION_FLAG = "vault_root_authenticated"
+
+
+def _system_user():
+    user, _ = User.objects.get_or_create(
+        username="__vault_system__",
+        defaults={"is_active": False, "email": "vault-system@localhost"},
+    )
+    return user
+
+
+def _record_vault_event(request, action, entity, details, user=None):
+    AuditLog.objects.create(
+        user=user or _system_user(),
+        action=action,
+        entity=entity,
+        details=details,
+        ip_address=get_client_ip(request),
+    )
 
 
 def _base64url_uint(value: int) -> str:
@@ -178,21 +200,24 @@ def _authenticate_root_token(request, vault, token):
     token = (token or "").strip()
     if not token:
         return None, "Root token is required."
-
-    try:
-        provided_root_key = base64.b64decode(token.encode())
-    except Exception:
-        return None, "Invalid root token format."
-
-    expected_root_key = decrypt_root_key(vault.encrypted_root_key)
-    if not hmac.compare_digest(provided_root_key, expected_root_key):
+    if not check_password(token, vault.root_token_hash):
+        _record_vault_event(request, "LOGIN", "VaultRootLogin", "Root token login failed.")
         return None, "Invalid root token."
 
-    root_user = User.objects.filter(is_superuser=True).order_by("id").first()
-    if not root_user:
-        return None, "No admin/root account is available for root-token login."
+    if vault.is_sealed:
+        return None, "Vault is sealed. Unseal before root login."
 
-    _establish_authenticated_session(request, root_user, vault, root_key=expected_root_key)
+    root_user, _ = User.objects.get_or_create(
+        username="vault-root",
+        defaults={"email": "vault-root@localhost", "is_staff": True},
+    )
+    if not root_user.has_usable_password():
+        root_user.set_unusable_password()
+        root_user.save(update_fields=["password"])
+
+    _establish_authenticated_session(request, root_user, vault)
+    request.session[ROOT_SESSION_FLAG] = True
+    _record_vault_event(request, "LOGIN", "VaultRootLogin", "Root token login success.", user=root_user)
     return root_user, None
 
 
@@ -255,7 +280,7 @@ def home(request):
 def initialize_vault(request):
     vault = VaultConfig.objects.first()
 
-    if vault:
+    if vault and vault.initialized:
         return redirect("unseal" if vault.is_sealed else "login")
 
     if request.method == "POST":
@@ -285,24 +310,33 @@ def initialize_vault(request):
 
         location = get_location_from_ip(get_client_ip(request)) or "LOCALHOST"
         root_key = os.urandom(16)
+        root_token = secrets.token_urlsafe(32)
         encrypted_root_key = encrypt_root_key(root_key)
 
         VaultConfig.objects.create(
             encrypted_root_key=encrypted_root_key,
             allowed_location=location,
-            is_sealed=True,
+            initialized=True,
+            sealed=True,
             total_shares=total_shares,
             threshold=threshold,
+            root_token_hash=make_password(root_token),
+            initialized_at=timezone.now(),
         )
 
         shares = [format_share(idx, share) for idx, share in Shamir.split(threshold, total_shares, root_key)]
 
-        logger.info("Vault initialized with Shamir shares", extra={"total_shares": total_shares, "threshold": threshold})
+        _record_vault_event(
+            request,
+            "CREATE",
+            "VaultInitialization",
+            f"Vault initialized with threshold {threshold}/{total_shares}.",
+        )
 
         return render(
             request,
             "show_shares.html",
-            {"shares": shares, "threshold": threshold, "total_shares": total_shares},
+            {"shares": shares, "threshold": threshold, "total_shares": total_shares, "root_token": root_token},
         )
 
     return render(request, "initialize.html")
@@ -317,11 +351,12 @@ def unseal_vault(request):
     if request.method == "POST":
         share_value = (request.POST.get("share") or "").strip()
         submitted = request.session.get("submitted_unseal_shares", [])
+        _record_vault_event(request, "UPDATE", "VaultUnseal", f"Unseal attempt submitted. Current count: {len(submitted)}.")
 
         try:
             share_index, share_bytes = parse_share(share_value)
         except Exception as exc:
-            logger.warning("Invalid unseal share format", extra={"error": str(exc)})
+            _record_vault_event(request, "UPDATE", "VaultUnseal", "Unseal failed: invalid share format.")
             return render(
                 request,
                 "unseal.html",
@@ -363,16 +398,16 @@ def unseal_vault(request):
 
                 request.session["vault_key"] = base64.b64encode(reconstructed_key).decode()
                 vault.is_sealed = False
-                vault.save(update_fields=["is_sealed"])
+                vault.save(update_fields=["sealed"])
                 cache.set("vault_hard_sealed", False, None)
                 request.session["vault_hard_sealed"] = False
                 request.session.pop("submitted_unseal_shares", None)
 
-                logger.info("Vault unsealed successfully")
+                _record_vault_event(request, "UPDATE", "VaultUnseal", "Vault unseal success.")
                 return redirect("login")
 
             except Exception as exc:
-                logger.warning("Unseal failed after threshold shares", extra={"error": str(exc)})
+                _record_vault_event(request, "UPDATE", "VaultUnseal", "Vault unseal failure.")
                 request.session.pop("submitted_unseal_shares", None)
                 return render(
                     request,
@@ -401,33 +436,68 @@ def login_view(request):
         return render(request, "sealed.html")
 
     if request.method == "POST":
-        auth_method = request.POST.get("auth_method", AUTH_METHOD_USERNAME_PASSWORD)
-        handlers = {
-            AUTH_METHOD_USERNAME_PASSWORD: _authenticate_with_username_password,
-            AUTH_METHOD_ROOT_TOKEN: _authenticate_with_root_token,
-        }
-
-        handler = handlers.get(auth_method)
-        if not handler:
-            return render(
-                request,
-                "login.html",
-                {"error": "Unsupported authentication method.", "selected_auth_method": AUTH_METHOD_USERNAME_PASSWORD},
-            )
-
-        user, error = handler(request, vault)
+        user, error = _authenticate_with_username_password(request, vault)
         if user:
             channel = AUTH_CHANNEL_CLI_VIA_WEB if _is_cli_web_fallback_request(request) else AUTH_CHANNEL_WEB
-            _record_login_audit(request, user, auth_method, channel=channel)
+            _record_login_audit(request, user, AUTH_METHOD_USERNAME_PASSWORD, channel=channel)
             return redirect("vault_dashboard")
 
-        return render(
-            request,
-            "login.html",
-            {"error": error or "Authentication failed.", "selected_auth_method": auth_method},
-        )
+        return render(request, "login.html", {"error": error or "Authentication failed."})
 
-    return render(request, "login.html", {"selected_auth_method": AUTH_METHOD_USERNAME_PASSWORD})
+    return render(request, "login.html")
+
+
+def root_token_login_view(request):
+    vault = VaultConfig.objects.first()
+    if not vault or vault.is_sealed:
+        return render(request, "sealed.html")
+
+    if request.method == "POST":
+        user, error = _authenticate_with_root_token(request, vault)
+        if user:
+            return redirect("vault_dashboard")
+        return render(request, "root_token_login.html", {"error": error or "Authentication failed."})
+    return render(request, "root_token_login.html")
+
+
+@login_required
+@require_POST
+def root_create_user(request):
+    if not request.session.get(ROOT_SESSION_FLAG):
+        return HttpResponseForbidden("Root token authentication is required.")
+
+    username = (request.POST.get("username") or "").strip()
+    password = request.POST.get("password") or ""
+    policy_name = (request.POST.get("policy_name") or "").strip().lower()
+
+    if not username or not password:
+        return JsonResponse({"ok": False, "error": "username and password are required."}, status=400)
+
+    if policy_name not in {"admin", "read-only", "secret-manager"}:
+        return JsonResponse({"ok": False, "error": "Invalid policy_name."}, status=400)
+
+    created_user = User.objects.create_user(username=username, password=password)
+
+    try:
+        from vault_dashboard.models import AccessPolicy
+
+        policy_flags = {
+            "admin": {"can_read": True, "can_write": True, "can_delete": True},
+            "read-only": {"can_read": True, "can_write": False, "can_delete": False},
+            "secret-manager": {"can_read": True, "can_write": True, "can_delete": False},
+        }[policy_name]
+        AccessPolicy.objects.create(user=created_user, **policy_flags)
+    except Exception:
+        pass
+
+    _record_vault_event(
+        request,
+        "CREATE",
+        "VaultUser",
+        f"Root created user '{created_user.username}' with policy '{policy_name}'.",
+        user=request.user,
+    )
+    return JsonResponse({"ok": True, "username": created_user.username, "policy_name": policy_name})
 
 
 @login_required
@@ -470,7 +540,7 @@ def seal_vault(request):
 
     if vault:
         vault.is_sealed = True
-        vault.save(update_fields=["is_sealed"])
+        vault.save(update_fields=["sealed"])
 
     cache.set("vault_hard_sealed", True, None)
     request.session["vault_hard_sealed"] = True

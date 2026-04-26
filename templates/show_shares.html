@@ -11,7 +11,11 @@
         <div class="card-body">
             <h3 class="card-title">Save These Unseal Shares</h3>
             <p>You need <strong>{{ threshold }}</strong> of <strong>{{ total_shares }}</strong> shares to unseal the vault.</p>
-            <div class="alert alert-warning">Store these shares securely. They are only shown once.</div>
+            <div class="alert alert-warning">Store these shares and root token securely. They are only shown once.</div>
+            <div class="mb-3">
+                <label class="form-label"><strong>Initial Root Token</strong></label>
+                <div class="border rounded p-2 bg-light"><code>{{ root_token }}</code></div>
+            </div>
             <ul class="list-group mb-3">
                 {% for share in shares %}
                     <li class="list-group-item"><code>{{ share }}</code></li>

@@ -25,7 +25,7 @@ class VaultHardSealMiddleware:
             if vault:
                 if not vault.is_sealed:
                     vault.is_sealed = True
-                    vault.save(update_fields=["is_sealed"])
+                    vault.save(update_fields=["sealed"])
                 cache.set("vault_hard_sealed", True, None)
             cache.set("vault_restart_seal_initialized", True, None)
 

@@ -518,6 +518,9 @@ def add_folder(request, env_id):
 # =========================
 @login_required
 def add_secret(request, folder_id):
+    if "vault_key" not in request.session:
+        return JsonResponse({"ok": False, "error": "Vault is sealed for this session."}, status=403)
+
     is_ajax = request.headers.get("x-requested-with") == "XMLHttpRequest"
     folder = get_object_or_404(Folder, id=folder_id)
     if not _has_access(request.user, "write", folder=folder):
@@ -612,6 +615,9 @@ def add_secret(request, folder_id):
 # =========================
 @login_required
 def reveal_secret(request, secret_id):
+    if "vault_key" not in request.session:
+        return JsonResponse({"error": "Vault is sealed for this session."}, status=403)
+
     secret = get_object_or_404(Secret, id=secret_id)
     if not _has_access(request.user, "read", secret=secret):
         return JsonResponse({"error": "You do not have read access for this secret."}, status=403)
@@ -632,6 +638,9 @@ def reveal_secret(request, secret_id):
 @login_required
 @require_GET
 def copy_secret(request, secret_id):
+    if "vault_key" not in request.session:
+        return JsonResponse({"error": "Vault is sealed for this session."}, status=403)
+
     secret = get_object_or_404(Secret, id=secret_id)
     if not _has_access(request.user, "read", secret=secret):
         return JsonResponse({"error": "You do not have read access for this secret."}, status=403)
