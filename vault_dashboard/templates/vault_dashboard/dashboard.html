@@ -766,7 +766,6 @@
                     <option value="{{ u.id }}">{{ u.username }}</option>
                     {% endfor %}
                 </select>
-                <div class="form-text">Optional if creating a new user below.</div>
             </div>
             <div class="col-md-3">
                 <label class="form-label">New username (optional)</label>
@@ -784,6 +783,9 @@
                     <option value="{{ env.id }}">{{ env.name }}</option>
                     {% endfor %}
                 </select>
+            </div>
+            <div class="col-12">
+                <div class="form-text">Tip: choose an existing user, or leave it empty and provide new username/password.</div>
             </div>
             <div class="col-md-3">
                 <label class="form-label">Folder (optional)</label>
