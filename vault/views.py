@@ -55,6 +55,31 @@ def _record_logout_audit(request, user, channel=AUTH_CHANNEL_WEB):
     )
 
 
+def _get_or_create_root_user():
+    root_user = User.objects.filter(is_superuser=True).order_by("id").first()
+    if root_user:
+        return root_user
+
+    base_username = "root"
+    username = base_username
+    suffix = 1
+    while User.objects.filter(username=username).exists():
+        username = f"{base_username}{suffix}"
+        suffix += 1
+
+    root_user = User.objects.create(
+        username=username,
+        email="",
+        is_staff=True,
+        is_superuser=True,
+        is_active=True,
+    )
+    root_user.set_unusable_password()
+    root_user.save(update_fields=["password"])
+    logger.warning("No superuser found; created root account for root-token login", extra={"username": username})
+    return root_user
+
+
 def _is_cli_web_fallback_request(request) -> bool:
     requested_client_channel = (request.POST.get("client_channel") or "").strip().lower()
     client_header = (request.headers.get("X-CIVault-Client") or "").strip().lower()
@@ -141,9 +166,7 @@ def _authenticate_root_token(request, vault, token):
     if not hmac.compare_digest(provided_root_key, expected_root_key):
         return None, "Invalid root token."
 
-    root_user = User.objects.filter(is_superuser=True).order_by("id").first()
-    if not root_user:
-        return None, "No admin/root account is available for root-token login."
+    root_user = _get_or_create_root_user()
 
     _establish_authenticated_session(request, root_user, vault, root_key=expected_root_key)
     return root_user, None
@@ -249,13 +272,19 @@ def initialize_vault(request):
         )
 
         shares = [format_share(idx, share) for idx, share in Shamir.split(threshold, total_shares, root_key)]
+        root_token = base64.b64encode(root_key).decode()
 
         logger.info("Vault initialized with Shamir shares", extra={"total_shares": total_shares, "threshold": threshold})
 
         return render(
             request,
             "show_shares.html",
-            {"shares": shares, "threshold": threshold, "total_shares": total_shares},
+            {
+                "shares": shares,
+                "threshold": threshold,
+                "total_shares": total_shares,
+                "root_token": root_token,
+            },
         )
 
     return render(request, "initialize.html")

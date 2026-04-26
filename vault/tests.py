@@ -111,6 +111,26 @@ class LoginAuthenticationFlowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Invalid root token.")
 
+    def test_root_token_login_creates_root_user_if_missing(self):
+        User.objects.filter(is_superuser=True).delete()
+        token = base64.b64encode(self.root_key).decode()
+
+        response = self.client.post(
+            reverse("login"),
+            {
+                "auth_method": "root_token",
+                "root_token": token,
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse("vault_dashboard"))
+
+        created_root = User.objects.filter(is_superuser=True).order_by("id").first()
+        self.assertIsNotNone(created_root)
+        self.assertTrue(created_root.is_staff)
+        self.assertEqual(self.client.session.get("_auth_user_id"), str(created_root.id))
+
     def test_cli_login_writes_audit_log(self):
         response = self.client.post(
             reverse("cli_login"),
@@ -137,3 +157,25 @@ class LoginAuthenticationFlowTests(TestCase):
         log = AuditLog.objects.filter(user=self.user, action="LOGOUT", entity="CLI").order_by("-timestamp").first()
         self.assertIsNotNone(log)
         self.assertIn("Logged out", log.details or "")
+
+
+class VaultInitializationTests(TestCase):
+    def test_initialize_displays_root_token_with_shares(self):
+        response = self.client.post(
+            reverse("initialize"),
+            {
+                "total_shares": "5",
+                "threshold": "3",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "show_shares.html")
+        self.assertContains(response, "Root token")
+
+        root_token = response.context["root_token"]
+        decoded_root_key = base64.b64decode(root_token.encode())
+        self.assertEqual(len(decoded_root_key), 16)
+
+        shares = response.context["shares"]
+        self.assertEqual(len(shares), 5)
