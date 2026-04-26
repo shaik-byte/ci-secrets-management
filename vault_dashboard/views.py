@@ -1596,6 +1596,8 @@ def save_access_policy_document(request):
 
     raw = (request.POST.get("policy_document") or "").strip()
     doc_format = (request.POST.get("document_format") or "json").strip().lower()
+    default_new_username = (request.POST.get("new_username") or "").strip()
+    default_new_password = (request.POST.get("new_password") or "").strip()
 
     if not raw:
         messages.error(request, "Policy document is empty.")
@@ -1603,7 +1605,11 @@ def save_access_policy_document(request):
 
     try:
         parsed = _parse_policy_document(raw, doc_format)
-        updated, skipped = _apply_access_policy_rules(parsed)
+        updated, skipped = _apply_access_policy_rules(
+            parsed,
+            default_username=default_new_username,
+            default_password=default_new_password,
+        )
     except ValueError as exc:
         messages.error(request, str(exc))
         return redirect("vault_dashboard")
@@ -1826,15 +1832,15 @@ def _parse_policy_document(raw_document, document_format):
     return rules
 
 
-def _apply_access_policy_rules(rules):
+def _apply_access_policy_rules(rules, default_username="", default_password=""):
     updated = 0
     skipped = 0
     for rule in rules:
-        username = (rule.get("user") or "").strip()
+        username = (rule.get("user") or default_username or "").strip()
         if not username:
             skipped += 1
             continue
-        password = (rule.get("password") or rule.get("new_password") or "").strip()
+        password = (rule.get("password") or rule.get("new_password") or default_password or "").strip()
         target_user = User.objects.filter(username__iexact=username).first()
         if not target_user:
             if not password:
