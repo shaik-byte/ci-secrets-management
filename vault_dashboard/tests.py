@@ -432,3 +432,115 @@ class AccessScopeVisibilityTests(TestCase):
             response = self.client.get("/secrets/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.status_code, 200)
+
+    def test_policy_ui_can_create_new_user_with_password_and_attach_policy(self):
+        super_client = self.client_class()
+        super_client.force_login(User.objects.create_superuser("root6", "root6@example.com", "rootpass"))
+
+        response = super_client.post(
+            "/secrets/policy-engine/save-ui/",
+            data={
+                "new_username": "newpolicyuser",
+                "new_password": "newpolicypass",
+                "environment_id": self.environment.id,
+                "folder_id": self.allowed_folder.id,
+                "can_read": "on",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+
+        created_user = User.objects.get(username="newpolicyuser")
+        self.assertTrue(created_user.check_password("newpolicypass"))
+        self.assertTrue(
+            AccessPolicy.objects.filter(
+                user=created_user,
+                environment=self.environment,
+                folder=self.allowed_folder,
+                can_read=True,
+            ).exists()
+        )
+
+    def test_policy_ui_requires_user_or_new_credentials(self):
+        super_client = self.client_class()
+        super_client.force_login(User.objects.create_superuser("root7", "root7@example.com", "rootpass"))
+
+        response = super_client.post(
+            "/secrets/policy-engine/save-ui/",
+            data={
+                "environment_id": self.environment.id,
+                "can_read": "on",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(User.objects.filter(username="").exists())
+        self.assertEqual(AccessPolicy.objects.count(), 0)
+
+    def test_policy_document_can_create_new_user_with_password_and_attach_policy(self):
+        super_client = self.client_class()
+        super_client.force_login(User.objects.create_superuser("root8", "root8@example.com", "rootpass"))
+
+        document = {
+            "rules": [
+                {
+                    "user": "manualdocuser",
+                    "password": "manualdocpass",
+                    "environment": self.environment.name,
+                    "folder": self.allowed_folder.name,
+                    "permissions": {"read": True, "write": False, "delete": False},
+                }
+            ]
+        }
+        response = super_client.post(
+            "/secrets/policy-engine/save-document/",
+            data={
+                "policy_document": json.dumps(document),
+                "document_format": "json",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+
+        created_user = User.objects.get(username="manualdocuser")
+        self.assertTrue(created_user.check_password("manualdocpass"))
+        self.assertTrue(
+            AccessPolicy.objects.filter(
+                user=created_user,
+                environment=self.environment,
+                folder=self.allowed_folder,
+                can_read=True,
+            ).exists()
+        )
+
+    def test_policy_document_uses_default_new_username_and_password_fields(self):
+        super_client = self.client_class()
+        super_client.force_login(User.objects.create_superuser("root9", "root9@example.com", "rootpass"))
+
+        document = {
+            "rules": [
+                {
+                    "environment": self.environment.name,
+                    "folder": self.allowed_folder.name,
+                    "permissions": {"read": True, "write": False, "delete": False},
+                }
+            ]
+        }
+        response = super_client.post(
+            "/secrets/policy-engine/save-document/",
+            data={
+                "new_username": "defaultdocuser",
+                "new_password": "defaultdocpass",
+                "policy_document": json.dumps(document),
+                "document_format": "json",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+
+        created_user = User.objects.get(username="defaultdocuser")
+        self.assertTrue(created_user.check_password("defaultdocpass"))
+        self.assertTrue(
+            AccessPolicy.objects.filter(
+                user=created_user,
+                environment=self.environment,
+                folder=self.allowed_folder,
+                can_read=True,
+            ).exists()
+        )

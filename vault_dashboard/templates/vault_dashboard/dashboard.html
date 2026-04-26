@@ -754,18 +754,26 @@
 <div id="section-policy" class="container mt-1" style="display:none;">
     <div class="card p-4 mb-4 shadow-sm">
         <h5 class="mb-3">User Access Control (UI)</h5>
-        <p class="text-muted mb-3">Grant read/write/delete permissions on environment, folder, or secret for a selected user.</p>
+        <p class="text-muted mb-3">Grant read/write/delete permissions on environment, folder, or secret for an existing user, or create a new username/password user and attach a policy in one step.</p>
         <form method="POST" action="{% url 'save_access_policy_ui' %}" class="row g-2 align-items-end">
             {% csrf_token %}
             <input type="hidden" name="policy_id" id="access-policy-id">
             <div class="col-md-3">
                 <label class="form-label">User</label>
-                <select class="form-select" name="user_id" id="access-user-id" required>
+                <select class="form-select" name="user_id" id="access-user-id">
                     <option value="">Select user</option>
                     {% for u in users %}
                     <option value="{{ u.id }}">{{ u.username }}</option>
                     {% endfor %}
                 </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">New username (optional)</label>
+                <input type="text" class="form-control" name="new_username" id="access-new-username" placeholder="Create new user">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">New password (optional)</label>
+                <input type="password" class="form-control" name="new_password" id="access-new-password" placeholder="Set password">
             </div>
             <div class="col-md-3">
                 <label class="form-label">Environment (optional)</label>
@@ -775,6 +783,9 @@
                     <option value="{{ env.id }}">{{ env.name }}</option>
                     {% endfor %}
                 </select>
+            </div>
+            <div class="col-12">
+                <div class="form-text">Tip: choose an existing user, or leave it empty and provide new username/password.</div>
             </div>
             <div class="col-md-3">
                 <label class="form-label">Folder (optional)</label>
@@ -828,6 +839,7 @@
   "rules": [
     {
       "user": "alice",
+      "password": "alice-pass",
       "environment": "prod",
       "folder": "payments",
       "secret": "STRIPE_API_KEY",
@@ -845,7 +857,18 @@
                         <option value="yaml">YAML</option>
                     </select>
                 </div>
-                <div class="col-md-9">
+                <div class="col-md-3">
+                    <label class="form-label">New username (optional)</label>
+                    <input type="text" name="new_username" class="form-control" placeholder="Create user for rules without user">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">New password (optional)</label>
+                    <input type="password" name="new_password" class="form-control" placeholder="Password for new username">
+                </div>
+                <div class="col-md-3">
+                    <div class="form-text mt-4">Used only when a rule does not include <code>user</code>/<code>password</code>.</div>
+                </div>
+                <div class="col-md-12">
                     <label class="form-label">Policy Document</label>
                     <textarea name="policy_document" class="form-control policy-doc-editor" rows="8" placeholder="Paste JSON or YAML policy document"></textarea>
                 </div>
@@ -2285,6 +2308,8 @@ document.addEventListener("submit", async function (event) {
 function resetAccessPolicyForm() {
     const policyId = document.getElementById("access-policy-id");
     const user = document.getElementById("access-user-id");
+    const newUsername = document.getElementById("access-new-username");
+    const newPassword = document.getElementById("access-new-password");
     const env = document.getElementById("access-environment-id");
     const folder = document.getElementById("access-folder-id");
     const secret = document.getElementById("access-secret-id");
@@ -2294,6 +2319,8 @@ function resetAccessPolicyForm() {
 
     if (policyId) policyId.value = "";
     if (user) user.value = "";
+    if (newUsername) newUsername.value = "";
+    if (newPassword) newPassword.value = "";
     if (env) env.value = "";
     if (folder) folder.value = "";
     if (secret) secret.value = "";
@@ -2308,6 +2335,8 @@ function editAccessPolicy(button) {
 
     const policyId = document.getElementById("access-policy-id");
     const user = document.getElementById("access-user-id");
+    const newUsername = document.getElementById("access-new-username");
+    const newPassword = document.getElementById("access-new-password");
     const env = document.getElementById("access-environment-id");
     const folder = document.getElementById("access-folder-id");
     const secret = document.getElementById("access-secret-id");
@@ -2317,6 +2346,8 @@ function editAccessPolicy(button) {
 
     if (policyId) policyId.value = row.dataset.policyId || "";
     if (user) user.value = row.dataset.userId || "";
+    if (newUsername) newUsername.value = "";
+    if (newPassword) newPassword.value = "";
     if (env) env.value = row.dataset.environmentId || "";
     if (folder) folder.value = row.dataset.folderId || "";
     if (secret) secret.value = row.dataset.secretId || "";
