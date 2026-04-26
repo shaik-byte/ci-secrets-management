@@ -5,12 +5,12 @@ class Migration(migrations.Migration):
     """
     Compatibility migration.
 
-    Retained as a no-op so existing databases/environments that reference this
-    migration filename continue to load migration dependencies successfully.
+    Kept as a no-op to preserve stable migration numbering while depending on
+    the canonical prior migration in this repository.
     """
 
     dependencies = [
-        ("vault", "0010_remove_vaultconfig_is_sealed_vaultconfig_created_at_and_more"),
+        ("vault", "0009_shamir_unseal_refactor"),
     ]
 
     operations = []
