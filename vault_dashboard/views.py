@@ -1501,11 +1501,36 @@ def save_access_policy_ui(request):
 
     policy_id = request.POST.get("policy_id")
     user_id = request.POST.get("user_id")
+    new_username = (request.POST.get("new_username") or "").strip()
+    new_password = request.POST.get("new_password") or ""
     environment_id = request.POST.get("environment_id") or None
     folder_id = request.POST.get("folder_id") or None
     secret_id = request.POST.get("secret_id") or None
 
-    target_user = get_object_or_404(User, id=user_id)
+    target_user = None
+    if user_id:
+        target_user = get_object_or_404(User, id=user_id)
+    else:
+        if not new_username or not new_password:
+            messages.error(
+                request,
+                "Select an existing user or provide both new username and password.",
+            )
+            return redirect("vault_dashboard")
+        if User.objects.filter(username__iexact=new_username).exists():
+            messages.error(
+                request,
+                f"User '{new_username}' already exists. Select it from the user list.",
+            )
+            return redirect("vault_dashboard")
+        target_user = User.objects.create_user(
+            username=new_username,
+            password=new_password,
+        )
+        messages.success(
+            request,
+            f"Created user '{target_user.username}' with password login.",
+        )
     environment = Environment.objects.filter(id=environment_id).first() if environment_id else None
     folder = Folder.objects.filter(id=folder_id).first() if folder_id else None
     secret = Secret.objects.filter(id=secret_id).first() if secret_id else None
@@ -1571,6 +1596,8 @@ def save_access_policy_document(request):
 
     raw = (request.POST.get("policy_document") or "").strip()
     doc_format = (request.POST.get("document_format") or "json").strip().lower()
+    default_new_username = (request.POST.get("new_username") or "").strip()
+    default_new_password = (request.POST.get("new_password") or "").strip()
 
     if not raw:
         messages.error(request, "Policy document is empty.")
@@ -1578,7 +1605,11 @@ def save_access_policy_document(request):
 
     try:
         parsed = _parse_policy_document(raw, doc_format)
-        updated, skipped = _apply_access_policy_rules(parsed)
+        updated, skipped = _apply_access_policy_rules(
+            parsed,
+            default_username=default_new_username,
+            default_password=default_new_password,
+        )
     except ValueError as exc:
         messages.error(request, str(exc))
         return redirect("vault_dashboard")
@@ -1801,18 +1832,21 @@ def _parse_policy_document(raw_document, document_format):
     return rules
 
 
-def _apply_access_policy_rules(rules):
+def _apply_access_policy_rules(rules, default_username="", default_password=""):
     updated = 0
     skipped = 0
     for rule in rules:
-        username = (rule.get("user") or "").strip()
+        username = (rule.get("user") or default_username or "").strip()
         if not username:
             skipped += 1
             continue
+        password = (rule.get("password") or rule.get("new_password") or default_password or "").strip()
         target_user = User.objects.filter(username__iexact=username).first()
         if not target_user:
-            skipped += 1
-            continue
+            if not password:
+                skipped += 1
+                continue
+            target_user = User.objects.create_user(username=username, password=password)
 
         environment_name = (rule.get("environment") or "").strip()
         folder_name = (rule.get("folder") or "").strip()
