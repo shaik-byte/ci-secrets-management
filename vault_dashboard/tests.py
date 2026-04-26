@@ -474,3 +474,38 @@ class AccessScopeVisibilityTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertFalse(User.objects.filter(username="").exists())
         self.assertEqual(AccessPolicy.objects.count(), 0)
+
+    def test_policy_document_can_create_new_user_with_password_and_attach_policy(self):
+        super_client = self.client_class()
+        super_client.force_login(User.objects.create_superuser("root8", "root8@example.com", "rootpass"))
+
+        document = {
+            "rules": [
+                {
+                    "user": "manualdocuser",
+                    "password": "manualdocpass",
+                    "environment": self.environment.name,
+                    "folder": self.allowed_folder.name,
+                    "permissions": {"read": True, "write": False, "delete": False},
+                }
+            ]
+        }
+        response = super_client.post(
+            "/secrets/policy-engine/save-document/",
+            data={
+                "policy_document": json.dumps(document),
+                "document_format": "json",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+
+        created_user = User.objects.get(username="manualdocuser")
+        self.assertTrue(created_user.check_password("manualdocpass"))
+        self.assertTrue(
+            AccessPolicy.objects.filter(
+                user=created_user,
+                environment=self.environment,
+                folder=self.allowed_folder,
+                can_read=True,
+            ).exists()
+        )

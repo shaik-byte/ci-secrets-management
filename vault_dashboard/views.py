@@ -1834,10 +1834,13 @@ def _apply_access_policy_rules(rules):
         if not username:
             skipped += 1
             continue
+        password = (rule.get("password") or rule.get("new_password") or "").strip()
         target_user = User.objects.filter(username__iexact=username).first()
         if not target_user:
-            skipped += 1
-            continue
+            if not password:
+                skipped += 1
+                continue
+            target_user = User.objects.create_user(username=username, password=password)
 
         environment_name = (rule.get("environment") or "").strip()
         folder_name = (rule.get("folder") or "").strip()
