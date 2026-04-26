@@ -1501,11 +1501,36 @@ def save_access_policy_ui(request):
 
     policy_id = request.POST.get("policy_id")
     user_id = request.POST.get("user_id")
+    new_username = (request.POST.get("new_username") or "").strip()
+    new_password = request.POST.get("new_password") or ""
     environment_id = request.POST.get("environment_id") or None
     folder_id = request.POST.get("folder_id") or None
     secret_id = request.POST.get("secret_id") or None
 
-    target_user = get_object_or_404(User, id=user_id)
+    target_user = None
+    if user_id:
+        target_user = get_object_or_404(User, id=user_id)
+    else:
+        if not new_username or not new_password:
+            messages.error(
+                request,
+                "Select an existing user or provide both new username and password.",
+            )
+            return redirect("vault_dashboard")
+        if User.objects.filter(username__iexact=new_username).exists():
+            messages.error(
+                request,
+                f"User '{new_username}' already exists. Select it from the user list.",
+            )
+            return redirect("vault_dashboard")
+        target_user = User.objects.create_user(
+            username=new_username,
+            password=new_password,
+        )
+        messages.success(
+            request,
+            f"Created user '{target_user.username}' with password login.",
+        )
     environment = Environment.objects.filter(id=environment_id).first() if environment_id else None
     folder = Folder.objects.filter(id=folder_id).first() if folder_id else None
     secret = Secret.objects.filter(id=secret_id).first() if secret_id else None
