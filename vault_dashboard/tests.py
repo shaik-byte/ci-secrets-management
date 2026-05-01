@@ -820,3 +820,12 @@ class AppRoleMachineLoginTests(TestCase):
         response = self.client.get("/secrets/policy-engine/machine/approle/login/")
         self.assertEqual(response.status_code, 405)
         self.assertEqual(response["Content-Type"], "application/json")
+
+    def test_approle_machine_login_invalid_role_id_format_returns_400_json(self):
+        response = self.client.post(
+            "/secrets/policy-engine/machine/approle/login/",
+            data=json.dumps({"role_id": "test", "secret_id": self.secret_id_plain}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response["Content-Type"], "application/json")

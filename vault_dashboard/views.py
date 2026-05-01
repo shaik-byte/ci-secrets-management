@@ -151,6 +151,7 @@ import json
 import hashlib
 import re
 import secrets
+import uuid
 import yaml
 import requests
 import jwt
@@ -2360,9 +2361,13 @@ def approle_machine_login(request):
     secret_id_plain = str(payload.get("secret_id") or "").strip()
     if not role_id_raw or not secret_id_plain:
         return JsonResponse({"error": "Both role_id and secret_id are required."}, status=400)
+    try:
+        role_id = uuid.UUID(role_id_raw)
+    except ValueError:
+        return JsonResponse({"error": "Invalid role_id format. Must be a UUID."}, status=400)
 
     approle = AppRole.objects.select_related("machine_policy", "machine_policy__access_policy").filter(
-        role_id=role_id_raw,
+        role_id=role_id,
         is_active=True,
     ).first()
     if not approle:
