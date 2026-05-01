@@ -1,3 +1,4 @@
+from django.http import JsonResponse
 from django.shortcuts import redirect
 
 
@@ -31,7 +32,14 @@ class SessionAuthRequiredMiddleware:
         path = request.path
 
         if path.startswith(self.PROTECTED_PREFIXES) and not path.startswith(self.EXEMPT_PREFIXES):
-            if not request.user.is_authenticated:
+            auth_header = (request.headers.get("Authorization") or "").strip().lower()
+            has_bearer_token = auth_header.startswith("bearer ")
+            accepts_json = "application/json" in (request.headers.get("Accept") or "").lower()
+            is_api_style = has_bearer_token or accepts_json or path.startswith("/secrets/cli/") or path.startswith("/secrets/list/")
+
+            if not request.user.is_authenticated and not has_bearer_token:
+                if is_api_style:
+                    return JsonResponse({"ok": False, "error": "Authentication required."}, status=401)
                 # Redirect unauthenticated users to login (with `next`) for protected pages.
                 return redirect(f"/login/?next={path}")
 

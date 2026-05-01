@@ -45,6 +45,7 @@ urlpatterns = [
     path('delete-secret/<int:secret_id>/', views.delete_secret, name="delete_secret"),
     path('cli/ping/', views.cli_ping, name="cli_ping"),
     path('cli/secrets/', views.cli_list_secrets, name="cli_list_secrets"),
+    path('list/', views.cli_list_secrets, name="list_secrets"),
     path('cli/secrets/add/', views.cli_add_secret, name="cli_add_secret"),
     path('cli/secrets/delete/', views.cli_delete_secret, name="cli_delete_secret"),
     path('cli/policies/apply/', views.cli_apply_policy, name="cli_apply_policy"),

@@ -2,9 +2,11 @@ import json
 import re
 from pathlib import Path
 from unittest.mock import patch
+from datetime import timedelta
 
 from django.contrib.auth.models import User
 from django.test import TestCase
+from django.utils import timezone
 from cryptography.fernet import Fernet
 
 from .models import AccessPolicy, AppRole, Environment, Folder, MachinePolicy, MachineSessionToken, Secret
@@ -874,3 +876,76 @@ class AppRoleSecretVisibilityTests(TestCase):
         refresh = self.client.get("/secrets/")
         self.assertEqual(refresh.status_code, 200)
         self.assertEqual(refresh.context["new_approle_secret"], generated_secret)
+
+class MachineTokenSecretListTests(TestCase):
+    def setUp(self):
+        self.owner = User.objects.create_user(username="owner_api", email="owner_api@example.com", password="ownerpass")
+        self.machine_user = User.objects.create_user(username="machine_api", email="machine_api@example.com", password="machinepass")
+        self.environment = Environment.objects.create(name="test", created_by=self.owner)
+        self.folder = Folder.objects.create(name="shaik", environment=self.environment, owner_email="svc@example.com")
+        self.secret = Secret.objects.create(name="TOKEN", service_name="svc", encrypted_value=b"x", folder=self.folder)
+
+    def _create_machine_token(self, *, can_read=True, expires_at=None, environment=None, folder=None):
+        access = AccessPolicy.objects.create(
+            user=self.machine_user,
+            environment=environment,
+            folder=folder,
+            can_read=can_read,
+            can_write=False,
+            can_delete=False,
+        )
+        machine_policy = MachinePolicy.objects.create(
+            name=f"machine-policy-{MachinePolicy.objects.count()+1}",
+            access_policy=access,
+            created_by=self.owner,
+        )
+        plain = f"mvt_plain_{MachineSessionToken.objects.count()+1}"
+        MachineSessionToken.objects.create(
+            token_hash=dashboard_views.hashlib.sha256(plain.encode()).hexdigest(),
+            machine_policy=machine_policy,
+            expires_at=expires_at or (timezone.now() + timedelta(minutes=10)),
+            is_active=True,
+        )
+        return plain
+
+    def test_valid_machine_token_can_list_secrets_without_redirect(self):
+        token = self._create_machine_token(environment=self.environment)
+        response = self.client.get(
+            "/secrets/list/?environment=test&folder=shaik",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+            HTTP_ACCEPT="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/json")
+        body = response.json()
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["count"], 1)
+        self.assertEqual(body["auth_type"], "machine_token")
+
+    def test_missing_token_returns_json_401_for_api_request(self):
+        response = self.client.get(
+            "/secrets/list/?environment=test&folder=shaik",
+            HTTP_ACCEPT="application/json",
+        )
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response["Content-Type"], "application/json")
+
+    def test_expired_token_returns_json_401(self):
+        token = self._create_machine_token(environment=self.environment, expires_at=timezone.now() - timedelta(minutes=1))
+        response = self.client.get(
+            "/secrets/list/?environment=test&folder=shaik",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+            HTTP_ACCEPT="application/json",
+        )
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response["Content-Type"], "application/json")
+
+    def test_token_without_read_returns_json_403(self):
+        token = self._create_machine_token(can_read=False, environment=self.environment)
+        response = self.client.get(
+            "/secrets/list/?environment=test&folder=shaik",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+            HTTP_ACCEPT="application/json",
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response["Content-Type"], "application/json")
