@@ -514,6 +514,31 @@ Response includes:
 - resolved `machine_policy`
 - effective access scope (`read/write/delete`)
 
+
+### AppRole quick start (copy/paste)
+
+1. **Login using AppRole** (returns a machine token):
+
+```bash
+curl -i -X POST "http://127.0.0.1:8000/secrets/policy-engine/machine/approle/login/" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "role_id": "YOUR_ROLE_ID",
+    "secret_id": "YOUR_SECRET_ID"
+  }'
+```
+
+2. **Use machine token to access secrets**:
+
+```bash
+curl -i "http://127.0.0.1:8000/secrets/list/?environment=test&folder=shaik" \
+  -H "Authorization: Bearer YOUR_MACHINE_TOKEN"
+```
+
+> Notes:
+> - `YOUR_MACHINE_TOKEN` is the `machine_token` value returned from step 1.
+> - The token must be active, unexpired, and have `can_read=true` with matching scope.
+
 ---
 
 ## 🔧 AppRole Machine Login Endpoint (Policy Engine)
