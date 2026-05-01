@@ -430,24 +430,6 @@ Scope shortcuts supported in policy rules:
   - `"folder": "payments,billing"`
   - `"secret": "STRIPE_API_KEY,STRIPE_WEBHOOK_SECRET"`
 
-Wildcard full-access sample:
-
-```json
-{
-  "rules": [
-    {
-      "user": "alice",
-      "new_username": "true",
-      "password": "alice-pass",
-      "environment": "*",
-      "folder": "*",
-      "secret": "*",
-      "permissions": { "read": true, "write": false, "delete": false }
-    }
-  ]
-}
-```
-
 **`delete_policies.json`**
 
 ```json
