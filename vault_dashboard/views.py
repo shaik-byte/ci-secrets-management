@@ -2462,6 +2462,13 @@ def save_approle(request):
     request.session["new_approle_secret"] = secret_id_plain
     request.session["new_approle_role_name"] = name
     messages.success(request, f"AppRole '{name}' saved. Copy generated Secret ID now.")
+
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        return JsonResponse({
+            "ok": True,
+            "new_approle_secret": secret_id_plain,
+            "new_approle_role_name": name,
+        })
     return redirect("vault_dashboard")
 
 

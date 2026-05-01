@@ -2292,19 +2292,55 @@ document.addEventListener("submit", async function (event) {
             clearModalArtifacts();
         }
 
-        await fetch(form.action, {
+        const response = await fetch(form.action, {
             method: form.method || "POST",
             body: formData,
             headers: { "X-Requested-With": "XMLHttpRequest" },
             credentials: "same-origin",
             redirect: "follow",
         });
+
+        let appRolePayload = null;
+        const contentType = response.headers.get("content-type") || "";
+        if (contentType.includes("application/json")) {
+            appRolePayload = await response.json();
+        }
+
         await refreshContentArea(activeSection);
+        if (appRolePayload?.new_approle_secret) {
+            renderAppRoleSecretBanner(appRolePayload.new_approle_role_name, appRolePayload.new_approle_secret);
+            showSection("policy", { updateUrl: false });
+        }
     } catch (error) {
         console.error("Action failed:", error);
         window.alert("Something went wrong while saving. Please try again.");
     }
 });
+
+
+function renderAppRoleSecretBanner(roleName, secretValue) {
+    const policySection = document.getElementById("section-policy");
+    if (!policySection || !secretValue) return;
+
+    const existing = policySection.querySelector(".approle-secret-banner");
+    if (existing) existing.remove();
+
+    const banner = document.createElement("div");
+    banner.className = "alert alert-warning d-flex align-items-center justify-content-between flex-wrap gap-2 approle-secret-banner";
+    banner.innerHTML = `
+        <div>
+            <strong>AppRole Secret ID (copy now):</strong>
+            ${roleName || "AppRole"} →
+            <code id="approle-secret-id"></code>
+        </div>
+        <div>
+            <button type="button" class="btn btn-sm btn-dark" onclick="copyAppRoleSecretId()">Copy Secret ID</button>
+            <span id="approle-secret-copy-feedback" class="ms-2 text-muted small"></span>
+        </div>
+    `;
+    banner.querySelector("#approle-secret-id").textContent = secretValue;
+    policySection.insertBefore(banner, policySection.firstChild);
+}
 
 function resetAccessPolicyForm() {
     const policyId = document.getElementById("access-policy-id");
