@@ -2346,6 +2346,58 @@ def jwt_machine_login(request):
     )
 
 
+@csrf_exempt
+def approle_machine_login(request):
+    if request.method != "POST":
+        return JsonResponse({"error": "POST method required."}, status=405)
+
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+    except Exception:
+        return JsonResponse({"error": "Invalid JSON body."}, status=400)
+
+    role_id_raw = str(payload.get("role_id") or "").strip()
+    secret_id_plain = str(payload.get("secret_id") or "").strip()
+    if not role_id_raw or not secret_id_plain:
+        return JsonResponse({"error": "Both role_id and secret_id are required."}, status=400)
+
+    approle = AppRole.objects.select_related("machine_policy", "machine_policy__access_policy").filter(
+        role_id=role_id_raw,
+        is_active=True,
+    ).first()
+    if not approle:
+        return JsonResponse({"error": "Invalid role_id or inactive AppRole."}, status=403)
+
+    secret_id_hash = hashlib.sha256(secret_id_plain.encode()).hexdigest()
+    if secret_id_hash != approle.secret_id_hash:
+        return JsonResponse({"error": "Invalid role_id/secret_id credentials."}, status=403)
+
+    ttl_seconds = approle.token_ttl_seconds or MACHINE_SESSION_TTL_SECONDS
+    raw_machine_token = f"mvt_{secrets.token_urlsafe(48)}"
+    machine_token_hash = hashlib.sha256(raw_machine_token.encode()).hexdigest()
+    expires_at = timezone.now() + timedelta(seconds=ttl_seconds)
+    MachineSessionToken.objects.create(
+        token_hash=machine_token_hash,
+        machine_policy=approle.machine_policy,
+        expires_at=expires_at,
+        is_active=True,
+    )
+
+    access_policy = approle.machine_policy.access_policy
+    return JsonResponse(
+        {
+            "machine_token": raw_machine_token,
+            "token_type": "Bearer",
+            "expires_at": expires_at.isoformat(),
+            "expires_in": ttl_seconds,
+            "identity": approle.name,
+            "machine_policy": approle.machine_policy.name,
+            "access": _build_scope_payload(access_policy),
+        },
+        status=200,
+    )
+
+
 @login_required
 def save_machine_policy(request):
     if request.method != "POST":

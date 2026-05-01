@@ -5,7 +5,7 @@ from django.contrib.auth.models import User
 from django.test import TestCase
 from cryptography.fernet import Fernet
 
-from .models import AccessPolicy, Environment, Folder, Secret
+from .models import AccessPolicy, AppRole, Environment, Folder, MachinePolicy, MachineSessionToken, Secret
 from . import views as dashboard_views
 
 
@@ -749,3 +749,59 @@ class AccessScopeVisibilityTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertFalse(User.objects.filter(username="orphaneduser").exists())
         self.assertEqual(AccessPolicy.objects.count(), 0)
+
+
+class AppRoleMachineLoginTests(TestCase):
+    def setUp(self):
+        self.owner = User.objects.create_user(username="owner_machine", email="owner_machine@example.com", password="ownerpass")
+        self.machine_user = User.objects.create_user(
+            username="machine_user",
+            email="machine_user@example.com",
+            password="machinepass",
+        )
+        self.environment = Environment.objects.create(name="prod", created_by=self.owner)
+        self.access_policy = AccessPolicy.objects.create(
+            user=self.machine_user,
+            environment=self.environment,
+            can_read=True,
+            can_write=False,
+            can_delete=False,
+        )
+        self.machine_policy = MachinePolicy.objects.create(
+            name="svc-prod-reader",
+            description="Service reader policy",
+            access_policy=self.access_policy,
+            created_by=self.owner,
+        )
+        self.secret_id_plain = "known-secret-id"
+        self.client.force_login(self.owner)
+        self.approle = AppRole.objects.create(
+            name="svc-prod-approle",
+            secret_id_hash=dashboard_views.hashlib.sha256(self.secret_id_plain.encode()).hexdigest(),
+            machine_policy=self.machine_policy,
+            token_ttl_seconds=1200,
+            is_active=True,
+        )
+
+    def test_approle_machine_login_returns_machine_token_with_policy_scope(self):
+        response = self.client.post(
+            "/secrets/policy-engine/machine/approle/login/",
+            data=json.dumps({"role_id": str(self.approle.role_id), "secret_id": self.secret_id_plain}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertIn("machine_token", payload)
+        self.assertEqual(payload["machine_policy"], self.machine_policy.name)
+        self.assertEqual(payload["expires_in"], 1200)
+        self.assertEqual(payload["access"]["scope"], f"environment:{self.environment.id}")
+        self.assertTrue(MachineSessionToken.objects.filter(machine_policy=self.machine_policy).exists())
+
+    def test_approle_machine_login_rejects_invalid_secret(self):
+        response = self.client.post(
+            "/secrets/policy-engine/machine/approle/login/",
+            data=json.dumps({"role_id": str(self.approle.role_id), "secret_id": "wrong-secret"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(MachineSessionToken.objects.filter(machine_policy=self.machine_policy).exists())
