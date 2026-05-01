@@ -391,6 +391,38 @@ Apply:
 python cli/vault_agent.py policy-apply --file policy.yaml --format yaml
 ```
 
+### JSON example: create user and apply policy in one step
+
+You can also apply a JSON policy document that creates a user when `new_username` is set to `"true"` and then applies the rule so it appears in **Recent Access Rules** in UI.
+
+**`policy.json`**
+
+```json
+{
+  "rules": [
+    {
+      "user": "alice",
+      "new_username": "true",
+      "password": "alice-pass",
+      "environment": "prod",
+      "folder": "payments",
+      "secret": "STRIPE_API_KEY",
+      "permissions": {
+        "read": true,
+        "write": false,
+        "delete": false
+      }
+    }
+  ]
+}
+```
+
+Apply it with:
+
+```bash
+python cli/vault_agent.py policy-apply --file policy.json --format json
+```
+
 **`delete_policies.json`**
 
 ```json
