@@ -1168,7 +1168,9 @@
 
     {% if new_approle_secret %}
     <div class="alert alert-warning">
-        <strong>AppRole Secret ID (copy now):</strong> {{ new_approle_role_name }} → <code>{{ new_approle_secret }}</code>
+        <strong>AppRole Secret ID (copy now):</strong> {{ new_approle_role_name }} → <code id="approle-secret-id">{{ new_approle_secret }}</code>
+        <button type="button" class="btn btn-sm btn-dark ms-2" onclick="copyAppRoleSecretId()">Copy Secret ID</button>
+        <span id="approle-secret-copy-feedback" class="ms-2 text-muted small"></span>
     </div>
     {% endif %}
 
@@ -2412,6 +2414,40 @@ function legacyCopyText(value) {
     } catch (fallbackError) {
         console.error("Fallback copy failed:", fallbackError);
         return false;
+    }
+}
+
+async function copyAppRoleSecretId() {
+    const secretEl = document.getElementById("approle-secret-id");
+    const feedbackEl = document.getElementById("approle-secret-copy-feedback");
+    if (!secretEl || !feedbackEl) return;
+
+    const secretValue = (secretEl.textContent || "").trim();
+    if (!secretValue) {
+        feedbackEl.className = "ms-2 text-danger small";
+        feedbackEl.textContent = "Secret ID not available.";
+        return;
+    }
+
+    let copied = false;
+    if (navigator.clipboard?.writeText && window.isSecureContext) {
+        try {
+            await navigator.clipboard.writeText(secretValue);
+            copied = true;
+        } catch (_) {
+            copied = false;
+        }
+    }
+    if (!copied) {
+        copied = legacyCopyText(secretValue);
+    }
+
+    if (copied) {
+        feedbackEl.className = "ms-2 text-success small";
+        feedbackEl.textContent = "Copied";
+    } else {
+        feedbackEl.className = "ms-2 text-danger small";
+        feedbackEl.textContent = "Copy failed";
     }
 }
 
