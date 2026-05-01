@@ -2054,9 +2054,10 @@ document.addEventListener("DOMContentLoaded", function () {
     startAccessPolicySyncPolling();
     initializeSidebarToggle();
 
+    const hasNewAppRoleSecret = {% if new_approle_secret %}true{% else %}false{% endif %};
     const requestedSection = new URLSearchParams(window.location.search).get("section");
     const savedSection = localStorage.getItem("vault_active_section");
-    const preferredSection = requestedSection || savedSection || "dashboard";
+    const preferredSection = hasNewAppRoleSecret ? "policy" : (requestedSection || savedSection || "dashboard");
     const sectionExists = preferredSection === "dashboard" || document.getElementById(`section-${preferredSection}`);
     showSection(sectionExists ? preferredSection : "dashboard", { updateUrl: false });
 
