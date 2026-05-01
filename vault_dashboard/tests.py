@@ -1,5 +1,6 @@
 import json
 import re
+import base64
 from pathlib import Path
 from unittest.mock import patch
 from datetime import timedelta
@@ -11,6 +12,8 @@ from cryptography.fernet import Fernet
 
 from .models import AccessPolicy, AppRole, Environment, Folder, MachinePolicy, MachineSessionToken, Secret
 from . import views as dashboard_views
+from vault.models import VaultConfig
+from vault.crypto_utils import encrypt_root_key
 
 
 class AccessPolicySyncStateTests(TestCase):
@@ -996,6 +999,44 @@ class MachineTokenRevealSecretTests(TestCase):
         self.assertTrue(body["ok"])
         self.assertEqual(body["secret"], "super-secret")
         self.assertEqual(body["auth_type"], "machine_token")
+
+    def test_machine_reveal_works_when_vault_db_unsealed_without_session(self):
+        root_key = b"0123456789abcdef0123456789abcdef"
+        VaultConfig.objects.create(
+            encrypted_root_key=encrypt_root_key(root_key),
+            allowed_location="test",
+            is_sealed=False,
+        )
+        fernet = Fernet(base64.urlsafe_b64encode(root_key[:32]))
+        self.secret.encrypted_value = fernet.encrypt(b"db-backed-secret")
+        self.secret.save(update_fields=["encrypted_value"])
+
+        token = self._create_machine_token(can_read=True)
+        response = self.client.get(
+            f"/secrets/reveal-secret/{self.secret.id}/",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+            HTTP_ACCEPT="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/json")
+        self.assertEqual(response.json()["secret"], "db-backed-secret")
+
+    def test_machine_reveal_returns_423_when_vault_db_sealed(self):
+        root_key = b"0123456789abcdef0123456789abcdef"
+        VaultConfig.objects.create(
+            encrypted_root_key=encrypt_root_key(root_key),
+            allowed_location="test",
+            is_sealed=True,
+        )
+        token = self._create_machine_token(can_read=True)
+        response = self.client.get(
+            f"/secrets/reveal-secret/{self.secret.id}/",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+            HTTP_ACCEPT="application/json",
+        )
+        self.assertEqual(response.status_code, 423)
+        self.assertEqual(response["Content-Type"], "application/json")
+        self.assertEqual(response.json()["error"], "Vault is sealed")
 
     def test_missing_or_invalid_token_returns_json_auth_errors(self):
         missing = self.client.get(

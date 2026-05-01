@@ -651,6 +651,8 @@ def reveal_secret(request, secret_id):
         return JsonResponse({"error": "Secret not found"}, status=404)
     except Exception as e:
         if is_machine_api:
+            if str(e) == "Vault is sealed":
+                return JsonResponse({"error": "Vault is sealed"}, status=423)
             return JsonResponse({"error": str(e)}, status=500)
         raise
 
