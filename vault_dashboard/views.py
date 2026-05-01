@@ -1854,39 +1854,81 @@ def _apply_access_policy_rules(rules):
             or ""
         ).strip()
 
-        environment_name = (rule.get("environment") or "").strip()
-        folder_name = (rule.get("folder") or "").strip()
-        secret_name = (rule.get("secret") or "").strip()
+        def _split_scope(value):
+            raw = (value or "").strip()
+            if not raw:
+                return []
+            return [part.strip() for part in raw.split(",") if part.strip()]
 
-        environment = None
-        if environment_name:
-            environment_matches = Environment.objects.filter(name__iexact=environment_name)
-            if environment_matches.count() != 1:
-                skipped += 1
-                continue
-            environment = environment_matches.first()
+        environment_terms = _split_scope(rule.get("environment"))
+        folder_terms = _split_scope(rule.get("folder"))
+        secret_terms = _split_scope(rule.get("secret"))
 
-        folder = None
-        if folder_name:
-            folder_matches = Folder.objects.filter(name__iexact=folder_name)
-            if environment:
-                folder_matches = folder_matches.filter(environment=environment)
-            if folder_matches.count() != 1:
-                skipped += 1
+        if "*" in environment_terms:
+            environments = [None]
+        else:
+            environments = []
+            for name in environment_terms:
+                matches = list(Environment.objects.filter(name__iexact=name))
+                if len(matches) != 1:
+                    skipped += 1
+                    environments = None
+                    break
+                environments.append(matches[0])
+            if environments is None:
                 continue
-            folder = folder_matches.first()
+            if not environments:
+                environments = [None]
 
-        secret = None
-        if secret_name:
-            secret_matches = Secret.objects.filter(name__iexact=secret_name)
-            if folder:
-                secret_matches = secret_matches.filter(folder=folder)
-            elif environment:
-                secret_matches = secret_matches.filter(folder__environment=environment)
-            if secret_matches.count() != 1:
-                skipped += 1
-                continue
-            secret = secret_matches.first()
+        scope_triples = []
+        invalid_scope = False
+        for environment in environments:
+            if "*" in folder_terms:
+                folders = [None]
+            elif folder_terms:
+                folders = []
+                for folder_name in folder_terms:
+                    folder_matches = Folder.objects.filter(name__iexact=folder_name)
+                    if environment:
+                        folder_matches = folder_matches.filter(environment=environment)
+                    matches = list(folder_matches)
+                    if len(matches) != 1:
+                        invalid_scope = True
+                        break
+                    folders.append(matches[0])
+                if invalid_scope:
+                    break
+            else:
+                folders = [None]
+
+            for folder in folders:
+                if "*" in secret_terms:
+                    secrets = [None]
+                elif secret_terms:
+                    secrets = []
+                    for secret_name in secret_terms:
+                        secret_matches = Secret.objects.filter(name__iexact=secret_name)
+                        if folder:
+                            secret_matches = secret_matches.filter(folder=folder)
+                        elif environment:
+                            secret_matches = secret_matches.filter(folder__environment=environment)
+                        matches = list(secret_matches)
+                        if len(matches) > 1:
+                            invalid_scope = True
+                            break
+                        if len(matches) == 1:
+                            secrets.append(matches[0])
+                    if invalid_scope:
+                        break
+                else:
+                    secrets = [None]
+
+                for secret in secrets:
+                    scope_triples.append((environment, folder, secret))
+
+        if invalid_scope or not scope_triples:
+            skipped += 1
+            continue
 
         target_user = User.objects.filter(username__iexact=username).first()
         if create_user_requested and not target_user:
@@ -1901,18 +1943,21 @@ def _apply_access_policy_rules(rules):
             target_user = User.objects.create_user(username=username, password=password)
 
         permissions = rule.get("permissions") or {}
-        AccessPolicy.objects.update_or_create(
-            user=target_user,
-            environment=environment,
-            folder=folder,
-            secret=secret,
-            defaults={
-                "can_read": bool(permissions.get("read")),
-                "can_write": bool(permissions.get("write")),
-                "can_delete": bool(permissions.get("delete")),
-            },
-        )
-        updated += 1
+        created_or_updated = 0
+        for environment, folder, secret in scope_triples:
+            AccessPolicy.objects.update_or_create(
+                user=target_user,
+                environment=environment,
+                folder=folder,
+                secret=secret,
+                defaults={
+                    "can_read": bool(permissions.get("read")),
+                    "can_write": bool(permissions.get("write")),
+                    "can_delete": bool(permissions.get("delete")),
+                },
+            )
+            created_or_updated += 1
+        updated += created_or_updated
 
     return updated, skipped
 

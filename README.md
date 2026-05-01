@@ -423,6 +423,13 @@ Apply it with:
 python cli/vault_agent.py policy-apply --file policy.json --format json
 ```
 
+Scope shortcuts supported in policy rules:
+
+- Use `*` for all values at that level (`environment`, `folder`, `secret`).
+- Use comma-separated names for multiple values, for example:
+  - `"folder": "payments,billing"`
+  - `"secret": "STRIPE_API_KEY,STRIPE_WEBHOOK_SECRET"`
+
 **`delete_policies.json`**
 
 ```json
