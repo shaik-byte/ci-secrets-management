@@ -1826,13 +1826,21 @@ def _parse_policy_document(raw_document, document_format):
 
 
 def _apply_access_policy_rules(rules):
+    def _as_bool(value):
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+        return bool(value)
+
     updated = 0
     skipped = 0
     for rule in rules:
+        create_user_requested = _as_bool(rule.get("new_username"))
         username = (
             rule.get("user")
             or rule.get("username")
-            or rule.get("new_username")
+            or (rule.get("new_username") if isinstance(rule.get("new_username"), str) else "")
             or rule.get("new user")
             or ""
         ).strip()
@@ -1881,8 +1889,11 @@ def _apply_access_policy_rules(rules):
             secret = secret_matches.first()
 
         target_user = User.objects.filter(username__iexact=username).first()
-        if not target_user:
-            if not password:
+        if create_user_requested and target_user:
+            skipped += 1
+            continue
+        if create_user_requested or not target_user:
+            if not password or target_user:
                 skipped += 1
                 continue
             target_user = User.objects.create_user(username=username, password=password)

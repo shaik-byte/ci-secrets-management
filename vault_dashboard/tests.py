@@ -545,6 +545,44 @@ class AccessScopeVisibilityTests(TestCase):
             ).exists()
         )
 
+    def test_policy_document_can_create_user_when_new_username_flag_is_true(self):
+        super_client = self.client_class()
+        super_client.force_login(User.objects.create_superuser("root12", "root12@example.com", "rootpass"))
+
+        document = {
+            "rules": [
+                {
+                    "user": "alice",
+                    "new_username": "true",
+                    "password": "alice-pass",
+                    "environment": self.environment.name,
+                    "folder": self.allowed_folder.name,
+                    "permissions": {"read": True, "write": False, "delete": False},
+                }
+            ]
+        }
+        response = super_client.post(
+            "/secrets/policy-engine/save-document/",
+            data={
+                "policy_document": json.dumps(document),
+                "document_format": "json",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+
+        created_user = User.objects.get(username="alice")
+        self.assertTrue(created_user.check_password("alice-pass"))
+        self.assertTrue(
+            AccessPolicy.objects.filter(
+                user=created_user,
+                environment=self.environment,
+                folder=self.allowed_folder,
+                can_read=True,
+                can_write=False,
+                can_delete=False,
+            ).exists()
+        )
+
     def test_policy_document_requires_user_in_each_rule(self):
         super_client = self.client_class()
         super_client.force_login(User.objects.create_superuser("root9", "root9@example.com", "rootpass"))
