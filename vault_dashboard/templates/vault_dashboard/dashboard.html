@@ -752,6 +752,20 @@
 
 {% if can_view_policy %}
 <div id="section-policy" class="container mt-1" style="display:none;">
+    {% if new_approle_secret %}
+    <div class="alert alert-warning d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <div>
+            <strong>AppRole Secret ID (copy now):</strong>
+            {{ new_approle_role_name }} →
+            <code id="approle-secret-id">{{ new_approle_secret }}</code>
+        </div>
+        <div>
+            <button type="button" class="btn btn-sm btn-dark" onclick="copyAppRoleSecretId()">Copy Secret ID</button>
+            <span id="approle-secret-copy-feedback" class="ms-2 text-muted small"></span>
+        </div>
+    </div>
+    {% endif %}
+
     <div class="card p-4 mb-4 shadow-sm">
         <h5 class="mb-3">User Access Control (UI)</h5>
         <p class="text-muted mb-3">Grant read/write/delete permissions on environment, folder, or secret for an existing user, or create a new username/password user and attach a policy in one step.</p>
@@ -1165,12 +1179,6 @@
         <h5 class="text-light">Machine / Service Authentication (AppRole + JWT Workload Identity)</h5>
         <p class="text-muted mb-0">Human access ends above. The section below is for machine identities only.</p>
     </div>
-
-    {% if new_approle_secret %}
-    <div class="alert alert-warning">
-        <strong>AppRole Secret ID (copy now):</strong> {{ new_approle_role_name }} → <code>{{ new_approle_secret }}</code>
-    </div>
-    {% endif %}
 
     <div class="card p-4 mb-4 shadow-sm">
         <h5 class="mb-3">Machine Policy (UI)</h5>
@@ -2054,9 +2062,10 @@ document.addEventListener("DOMContentLoaded", function () {
     startAccessPolicySyncPolling();
     initializeSidebarToggle();
 
+    const hasNewAppRoleSecret = {% if new_approle_secret %}true{% else %}false{% endif %};
     const requestedSection = new URLSearchParams(window.location.search).get("section");
     const savedSection = localStorage.getItem("vault_active_section");
-    const preferredSection = requestedSection || savedSection || "dashboard";
+    const preferredSection = hasNewAppRoleSecret ? "policy" : (requestedSection || savedSection || "dashboard");
     const sectionExists = preferredSection === "dashboard" || document.getElementById(`section-${preferredSection}`);
     showSection(sectionExists ? preferredSection : "dashboard", { updateUrl: false });
 
@@ -2411,6 +2420,40 @@ function legacyCopyText(value) {
     } catch (fallbackError) {
         console.error("Fallback copy failed:", fallbackError);
         return false;
+    }
+}
+
+async function copyAppRoleSecretId() {
+    const secretEl = document.getElementById("approle-secret-id");
+    const feedbackEl = document.getElementById("approle-secret-copy-feedback");
+    if (!secretEl || !feedbackEl) return;
+
+    const secretValue = (secretEl.textContent || "").trim();
+    if (!secretValue) {
+        feedbackEl.className = "ms-2 text-danger small";
+        feedbackEl.textContent = "Secret ID not available.";
+        return;
+    }
+
+    let copied = false;
+    if (navigator.clipboard?.writeText && window.isSecureContext) {
+        try {
+            await navigator.clipboard.writeText(secretValue);
+            copied = true;
+        } catch (_) {
+            copied = false;
+        }
+    }
+    if (!copied) {
+        copied = legacyCopyText(secretValue);
+    }
+
+    if (copied) {
+        feedbackEl.className = "ms-2 text-success small";
+        feedbackEl.textContent = "Copied";
+    } else {
+        feedbackEl.className = "ms-2 text-danger small";
+        feedbackEl.textContent = "Copy failed";
     }
 }
 

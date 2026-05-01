@@ -513,3 +513,27 @@ Response includes:
 - `expires_in` / `expires_at`
 - resolved `machine_policy`
 - effective access scope (`read/write/delete`)
+
+---
+
+## 🔧 AppRole Machine Login Endpoint (Policy Engine)
+
+Machine/workload identities can authenticate with AppRole credentials using:
+
+- `POST /secrets/policy-engine/machine/approle/login/`
+
+Request body:
+
+```json
+{
+  "role_id": "<approle role id>",
+  "secret_id": "<approle secret id>"
+}
+```
+
+Response includes:
+
+- `machine_token` (generated vault machine session token)
+- `expires_in` / `expires_at` (uses AppRole token TTL)
+- resolved `machine_policy`
+- effective access scope (`read/write/delete`)

@@ -36,6 +36,7 @@ urlpatterns = [
     path('policy-engine/machine/save-jwt/', views.save_jwt_workload_identity, name="save_jwt_workload_identity"),
     path('policy-engine/machine/save-document/', views.save_machine_auth_document, name="save_machine_auth_document"),
     path('policy-engine/machine/jwt/login/', views.jwt_machine_login, name="jwt_machine_login"),
+    path('policy-engine/machine/approle/login/', views.approle_machine_login, name="approle_machine_login"),
     path('approvals/<int:approval_id>/approve/', views.approve_deletion_request, name="approve_deletion_request"),
     path('approvals/<int:approval_id>/reject/', views.reject_deletion_request, name="reject_deletion_request"),
     path('environment/<int:env_id>/toggle-delete-approval/', views.toggle_environment_delete_approval, name="toggle_environment_delete_approval"),
