@@ -40,22 +40,25 @@ def encrypt_value(request, value):
 
 def decrypt_value(request, encrypted_value):
     key_b64 = request.session.get("vault_key")
-    if not key_b64:
-        raise Exception("Vault is sealed")
+    materials = []
+    if key_b64:
+        key = base64.b64decode(key_b64)
+        materials.extend(_derive_fernet_materials(key))
 
-    key = base64.b64decode(key_b64)
-    materials = _derive_fernet_materials(key)
-
-    # Also attempt with persisted root key in case session key is stale.
+    # Also attempt with persisted root key; required for machine/API requests that do not
+    # carry browser session state.
     try:
         from vault.models import VaultConfig
         from vault.crypto_utils import decrypt_root_key
 
         vault = VaultConfig.objects.first()
-        if vault:
+        if vault and not vault.is_sealed:
             materials.extend(_derive_fernet_materials(decrypt_root_key(vault.encrypted_root_key)))
     except Exception:
         pass
+
+    if not materials:
+        raise Exception("Vault is sealed")
 
     tried = set()
     for material in materials:
