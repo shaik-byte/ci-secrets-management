@@ -545,6 +545,156 @@ class AccessScopeVisibilityTests(TestCase):
             ).exists()
         )
 
+    def test_policy_document_can_create_user_when_new_username_flag_is_true(self):
+        super_client = self.client_class()
+        super_client.force_login(User.objects.create_superuser("root12", "root12@example.com", "rootpass"))
+
+        document = {
+            "rules": [
+                {
+                    "user": "alice",
+                    "new_username": "true",
+                    "password": "alice-pass",
+                    "environment": self.environment.name,
+                    "folder": self.allowed_folder.name,
+                    "permissions": {"read": True, "write": False, "delete": False},
+                }
+            ]
+        }
+        response = super_client.post(
+            "/secrets/policy-engine/save-document/",
+            data={
+                "policy_document": json.dumps(document),
+                "document_format": "json",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+
+        created_user = User.objects.get(username="alice")
+        self.assertTrue(created_user.check_password("alice-pass"))
+        self.assertTrue(
+            AccessPolicy.objects.filter(
+                user=created_user,
+                environment=self.environment,
+                folder=self.allowed_folder,
+                can_read=True,
+                can_write=False,
+                can_delete=False,
+            ).exists()
+        )
+
+    def test_policy_document_with_new_username_flag_true_updates_existing_user_policy(self):
+        super_client = self.client_class()
+        super_client.force_login(User.objects.create_superuser("root13", "root13@example.com", "rootpass"))
+        existing_user = User.objects.create_user(username="alice", password="old-pass")
+
+        document = {
+            "rules": [
+                {
+                    "user": "alice",
+                    "new_username": "true",
+                    "password": "alice-pass",
+                    "environment": self.environment.name,
+                    "folder": self.allowed_folder.name,
+                    "permissions": {"read": True, "write": False, "delete": False},
+                }
+            ]
+        }
+        response = super_client.post(
+            "/secrets/policy-engine/save-document/",
+            data={
+                "policy_document": json.dumps(document),
+                "document_format": "json",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+
+        existing_user.refresh_from_db()
+        self.assertTrue(existing_user.check_password("old-pass"))
+        self.assertTrue(
+            AccessPolicy.objects.filter(
+                user=existing_user,
+                environment=self.environment,
+                folder=self.allowed_folder,
+                can_read=True,
+                can_write=False,
+                can_delete=False,
+            ).exists()
+        )
+
+    def test_policy_document_supports_wildcard_scope_with_star(self):
+        super_client = self.client_class()
+        super_client.force_login(User.objects.create_superuser("root14", "root14@example.com", "rootpass"))
+
+        document = {
+            "rules": [
+                {
+                    "user": "alice",
+                    "new_username": "true",
+                    "password": "alice-pass",
+                    "environment": "*",
+                    "folder": "*",
+                    "secret": "*",
+                    "permissions": {"read": True, "write": False, "delete": False},
+                }
+            ]
+        }
+        response = super_client.post(
+            "/secrets/policy-engine/save-document/",
+            data={
+                "policy_document": json.dumps(document),
+                "document_format": "json",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        user = User.objects.get(username="alice")
+        self.assertTrue(
+            AccessPolicy.objects.filter(
+                user=user,
+                environment__isnull=True,
+                folder__isnull=True,
+                secret__isnull=True,
+                can_read=True,
+                can_write=False,
+                can_delete=False,
+            ).exists()
+        )
+
+    def test_policy_document_supports_multiple_folders_and_secrets(self):
+        super_client = self.client_class()
+        super_client.force_login(User.objects.create_superuser("root15", "root15@example.com", "rootpass"))
+        other_folder = Folder.objects.create(name="billing", environment=self.environment, owner_email="c@test.com")
+        secret_1 = Secret.objects.create(name="STRIPE_API_KEY", encrypted_value=b"x", folder=self.allowed_folder)
+        secret_2 = Secret.objects.create(name="STRIPE_WEBHOOK_SECRET", encrypted_value=b"y", folder=other_folder)
+
+        document = {
+            "rules": [
+                {
+                    "user": "alice",
+                    "new_username": "true",
+                    "password": "alice-pass",
+                    "environment": self.environment.name,
+                    "folder": f"{self.allowed_folder.name},{other_folder.name}",
+                    "secret": f"{secret_1.name},{secret_2.name}",
+                    "permissions": {"read": True, "write": False, "delete": False},
+                }
+            ]
+        }
+        response = super_client.post(
+            "/secrets/policy-engine/save-document/",
+            data={
+                "policy_document": json.dumps(document),
+                "document_format": "json",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+
+        user = User.objects.get(username="alice")
+        self.assertEqual(
+            AccessPolicy.objects.filter(user=user, environment=self.environment, can_read=True).count(),
+            2,
+        )
+
     def test_policy_document_requires_user_in_each_rule(self):
         super_client = self.client_class()
         super_client.force_login(User.objects.create_superuser("root9", "root9@example.com", "rootpass"))
