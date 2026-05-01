@@ -1596,20 +1596,13 @@ def save_access_policy_document(request):
 
     raw = (request.POST.get("policy_document") or "").strip()
     doc_format = (request.POST.get("document_format") or "json").strip().lower()
-    default_new_username = (request.POST.get("new_username") or "").strip()
-    default_new_password = (request.POST.get("new_password") or "").strip()
-
     if not raw:
         messages.error(request, "Policy document is empty.")
         return redirect("vault_dashboard")
 
     try:
         parsed = _parse_policy_document(raw, doc_format)
-        updated, skipped = _apply_access_policy_rules(
-            parsed,
-            default_username=default_new_username,
-            default_password=default_new_password,
-        )
+        updated, skipped = _apply_access_policy_rules(parsed)
     except ValueError as exc:
         messages.error(request, str(exc))
         return redirect("vault_dashboard")
@@ -1832,22 +1825,26 @@ def _parse_policy_document(raw_document, document_format):
     return rules
 
 
-def _apply_access_policy_rules(rules, default_username="", default_password=""):
+def _apply_access_policy_rules(rules):
     updated = 0
     skipped = 0
     for rule in rules:
-        username = (rule.get("user") or default_username or "").strip()
+        username = (
+            rule.get("user")
+            or rule.get("username")
+            or rule.get("new_username")
+            or rule.get("new user")
+            or ""
+        ).strip()
         if not username:
             skipped += 1
             continue
-        password = (rule.get("password") or rule.get("new_password") or "").strip()
-        password = (rule.get("password") or rule.get("new_password") or default_password or "").strip()
-        target_user = User.objects.filter(username__iexact=username).first()
-        if not target_user:
-            if not password:
-                skipped += 1
-                continue
-            target_user = User.objects.create_user(username=username, password=password)
+        password = (
+            rule.get("password")
+            or rule.get("new_password")
+            or rule.get("new password")
+            or ""
+        ).strip()
 
         environment_name = (rule.get("environment") or "").strip()
         folder_name = (rule.get("folder") or "").strip()
@@ -1858,8 +1855,6 @@ def _apply_access_policy_rules(rules, default_username="", default_password=""):
             environment_matches = Environment.objects.filter(name__iexact=environment_name)
             if environment_matches.count() != 1:
                 skipped += 1
-            environment_matches = Environment.objects.filter(name=environment_name)
-            if environment_matches.count() != 1:
                 continue
             environment = environment_matches.first()
 
@@ -1870,17 +1865,12 @@ def _apply_access_policy_rules(rules, default_username="", default_password=""):
                 folder_matches = folder_matches.filter(environment=environment)
             if folder_matches.count() != 1:
                 skipped += 1
-            folder_matches = Folder.objects.filter(name=folder_name)
-            if environment:
-                folder_matches = folder_matches.filter(environment=environment)
-            if folder_matches.count() != 1:
                 continue
             folder = folder_matches.first()
 
         secret = None
         if secret_name:
             secret_matches = Secret.objects.filter(name__iexact=secret_name)
-            secret_matches = Secret.objects.filter(name=secret_name)
             if folder:
                 secret_matches = secret_matches.filter(folder=folder)
             elif environment:
@@ -1889,6 +1879,13 @@ def _apply_access_policy_rules(rules, default_username="", default_password=""):
                 skipped += 1
                 continue
             secret = secret_matches.first()
+
+        target_user = User.objects.filter(username__iexact=username).first()
+        if not target_user:
+            if not password:
+                skipped += 1
+                continue
+            target_user = User.objects.create_user(username=username, password=password)
 
         permissions = rule.get("permissions") or {}
         AccessPolicy.objects.update_or_create(
