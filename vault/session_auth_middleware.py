@@ -11,7 +11,18 @@ class SessionAuthRequiredMiddleware:
     """
 
     PROTECTED_PREFIXES = ("/secrets/", "/notifications/", "/audit-logs/")
-    EXEMPT_PREFIXES = ("/login/", "/logout/", "/initialize/", "/unseal/", "/begin-auth/", "/finish-auth/", "/begin-registration/", "/finish-registration/")
+    EXEMPT_PREFIXES = (
+        "/login/",
+        "/logout/",
+        "/initialize/",
+        "/unseal/",
+        "/begin-auth/",
+        "/finish-auth/",
+        "/begin-registration/",
+        "/finish-registration/",
+        "/secrets/policy-engine/machine/jwt/login/",
+        "/secrets/policy-engine/machine/approle/login/",
+    )
 
     def __init__(self, get_response):
         self.get_response = get_response

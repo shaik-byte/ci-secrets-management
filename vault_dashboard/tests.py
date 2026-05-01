@@ -774,7 +774,6 @@ class AppRoleMachineLoginTests(TestCase):
             created_by=self.owner,
         )
         self.secret_id_plain = "known-secret-id"
-        self.client.force_login(self.owner)
         self.approle = AppRole.objects.create(
             name="svc-prod-approle",
             secret_id_hash=dashboard_views.hashlib.sha256(self.secret_id_plain.encode()).hexdigest(),
@@ -782,6 +781,16 @@ class AppRoleMachineLoginTests(TestCase):
             token_ttl_seconds=1200,
             is_active=True,
         )
+
+    def test_unauthenticated_approle_machine_login_does_not_redirect_to_login(self):
+        response = self.client.post(
+            "/secrets/policy-engine/machine/approle/login/",
+            data=json.dumps({"role_id": str(self.approle.role_id), "secret_id": self.secret_id_plain}),
+            content_type="application/json",
+        )
+        self.assertNotEqual(response.status_code, 302)
+        self.assertNotIn("/login/", response.headers.get("Location", ""))
+        self.assertEqual(response.status_code, 200)
 
     def test_approle_machine_login_returns_machine_token_with_policy_scope(self):
         response = self.client.post(
@@ -804,4 +813,10 @@ class AppRoleMachineLoginTests(TestCase):
             content_type="application/json",
         )
         self.assertEqual(response.status_code, 403)
+        self.assertEqual(response["Content-Type"], "application/json")
         self.assertFalse(MachineSessionToken.objects.filter(machine_policy=self.machine_policy).exists())
+
+    def test_approle_machine_login_get_returns_405_json(self):
+        response = self.client.get("/secrets/policy-engine/machine/approle/login/")
+        self.assertEqual(response.status_code, 405)
+        self.assertEqual(response["Content-Type"], "application/json")
