@@ -583,6 +583,45 @@ class AccessScopeVisibilityTests(TestCase):
             ).exists()
         )
 
+    def test_policy_document_with_new_username_flag_true_updates_existing_user_policy(self):
+        super_client = self.client_class()
+        super_client.force_login(User.objects.create_superuser("root13", "root13@example.com", "rootpass"))
+        existing_user = User.objects.create_user(username="alice", password="old-pass")
+
+        document = {
+            "rules": [
+                {
+                    "user": "alice",
+                    "new_username": "true",
+                    "password": "alice-pass",
+                    "environment": self.environment.name,
+                    "folder": self.allowed_folder.name,
+                    "permissions": {"read": True, "write": False, "delete": False},
+                }
+            ]
+        }
+        response = super_client.post(
+            "/secrets/policy-engine/save-document/",
+            data={
+                "policy_document": json.dumps(document),
+                "document_format": "json",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+
+        existing_user.refresh_from_db()
+        self.assertTrue(existing_user.check_password("old-pass"))
+        self.assertTrue(
+            AccessPolicy.objects.filter(
+                user=existing_user,
+                environment=self.environment,
+                folder=self.allowed_folder,
+                can_read=True,
+                can_write=False,
+                can_delete=False,
+            ).exists()
+        )
+
     def test_policy_document_requires_user_in_each_rule(self):
         super_client = self.client_class()
         super_client.force_login(User.objects.create_superuser("root9", "root9@example.com", "rootpass"))

@@ -1889,11 +1889,13 @@ def _apply_access_policy_rules(rules):
             secret = secret_matches.first()
 
         target_user = User.objects.filter(username__iexact=username).first()
-        if create_user_requested and target_user:
-            skipped += 1
-            continue
-        if create_user_requested or not target_user:
-            if not password or target_user:
+        if create_user_requested and not target_user:
+            if not password:
+                skipped += 1
+                continue
+            target_user = User.objects.create_user(username=username, password=password)
+        elif not target_user:
+            if not password:
                 skipped += 1
                 continue
             target_user = User.objects.create_user(username=username, password=password)
