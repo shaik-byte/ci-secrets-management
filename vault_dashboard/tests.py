@@ -838,3 +838,39 @@ class MergeConflictMarkerRegressionTests(TestCase):
         content = Path(__file__).with_name("views.py").read_text(encoding="utf-8")
         marker_pattern = re.compile(r"^(<<<<<<<|=======|>>>>>>>)", re.MULTILINE)
         self.assertIsNone(marker_pattern.search(content))
+
+
+class AppRoleSecretVisibilityTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_superuser(username="policyadmin", email="policy@example.com", password="pass1234")
+        self.client.force_login(self.user)
+        self.environment = Environment.objects.create(name="prod", created_by=self.user)
+        self.folder = Folder.objects.create(name="apps", environment=self.environment, owner_email="owner@example.com")
+        self.secret = Secret.objects.create(name="API_KEY", service_name="svc", encrypted_value=b"x", folder=self.folder)
+        self.policy = AccessPolicy.objects.create(user=self.user, secret=self.secret, can_read=True, can_write=True, can_delete=True)
+        self.machine_policy = MachinePolicy.objects.create(name="build-agent", access_policy=self.policy, created_by=self.user)
+        session = self.client.session
+        session["vault_key"] = "dummy-session-key"
+        session.save()
+
+    def test_new_approle_secret_remains_visible_on_dashboard_refresh(self):
+        response = self.client.post(
+            "/secrets/policy-engine/machine/save-approle/",
+            data={
+                "name": "gha-role",
+                "machine_policy_id": str(self.machine_policy.id),
+                "bound_cidrs": "10.0.0.0/24",
+                "token_ttl_seconds": "3600",
+                "is_active": "on",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+
+        first_load = self.client.get("/secrets/")
+        self.assertEqual(first_load.status_code, 200)
+        generated_secret = first_load.context["new_approle_secret"]
+        self.assertTrue(generated_secret)
+
+        refresh = self.client.get("/secrets/")
+        self.assertEqual(refresh.status_code, 200)
+        self.assertEqual(refresh.context["new_approle_secret"], generated_secret)
