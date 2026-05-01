@@ -32,12 +32,19 @@ class SessionAuthRequiredMiddleware:
         path = request.path
 
         if path.startswith(self.PROTECTED_PREFIXES) and not path.startswith(self.EXEMPT_PREFIXES):
-            auth_header = (request.headers.get("Authorization") or "").strip().lower()
-            has_bearer_token = auth_header.startswith("bearer ")
+            auth_header = (request.headers.get("Authorization") or "").strip()
+            auth_header_lower = auth_header.lower()
+            has_machine_bearer_token = auth_header_lower.startswith("bearer mvt_")
             accepts_json = "application/json" in (request.headers.get("Accept") or "").lower()
-            is_api_style = has_bearer_token or accepts_json or path.startswith("/secrets/cli/") or path.startswith("/secrets/list/")
+            is_api_style = (
+                has_machine_bearer_token
+                or accepts_json
+                or path.startswith("/secrets/cli/")
+                or path.startswith("/secrets/list/")
+                or path.startswith("/secrets/reveal-secret/")
+            )
 
-            if not request.user.is_authenticated and not has_bearer_token:
+            if not request.user.is_authenticated and not has_machine_bearer_token:
                 if is_api_style:
                     return JsonResponse({"ok": False, "error": "Authentication required."}, status=401)
                 # Redirect unauthenticated users to login (with `next`) for protected pages.

@@ -1008,12 +1008,13 @@ class MachineTokenRevealSecretTests(TestCase):
 
         invalid = self.client.get(
             f"/secrets/reveal-secret/{self.secret.id}/",
-            HTTP_AUTHORIZATION="Bearer bad-token",
+            HTTP_AUTHORIZATION="Bearer mvt_invalid_token",
             HTTP_ACCEPT="application/json",
         )
         self.assertEqual(invalid.status_code, 401)
         self.assertEqual(invalid["Content-Type"], "application/json")
         self.assertNotIn("Location", invalid)
+        self.assertEqual(invalid.json()["error"], "Invalid machine token.")
 
     def test_token_without_can_read_returns_403(self):
         token = self._create_machine_token(can_read=False)
