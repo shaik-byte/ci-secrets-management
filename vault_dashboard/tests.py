@@ -1025,3 +1025,12 @@ class MachineTokenRevealSecretTests(TestCase):
         )
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response["Content-Type"], "application/json")
+
+    def test_invalid_authorization_header_returns_json_401_not_redirect(self):
+        response = self.client.get(
+            f"/secrets/reveal-secret/{self.secret.id}/",
+            HTTP_AUTHORIZATION="Bearer invalid-format-token",
+        )
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response["Content-Type"], "application/json")
+        self.assertNotIn("Location", response)
