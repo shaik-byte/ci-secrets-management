@@ -1034,3 +1034,26 @@ class MachineTokenRevealSecretTests(TestCase):
         self.assertEqual(response.status_code, 401)
         self.assertEqual(response["Content-Type"], "application/json")
         self.assertNotIn("Location", response)
+
+    def test_invalid_secret_id_returns_json_404(self):
+        token = self._create_machine_token(can_read=True)
+        response = self.client.get(
+            "/secrets/reveal-secret/999999/",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+            HTTP_ACCEPT="application/json",
+        )
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response["Content-Type"], "application/json")
+        self.assertEqual(response.json()["error"], "Secret not found")
+
+    @patch("vault_dashboard.views.decrypt_value", side_effect=Exception("decrypt failure"))
+    def test_internal_error_returns_json_500_not_html(self, _mock_decrypt):
+        token = self._create_machine_token(can_read=True)
+        response = self.client.get(
+            f"/secrets/reveal-secret/{self.secret.id}/",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+            HTTP_ACCEPT="application/json",
+        )
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response["Content-Type"], "application/json")
+        self.assertEqual(response.json()["error"], "decrypt failure")
