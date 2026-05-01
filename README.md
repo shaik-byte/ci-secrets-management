@@ -193,6 +193,43 @@ You can now manage secrets from the terminal without using the web UI.
 - `policy-apply`: apply policy rules from YAML/JSON document
 - `policy-delete`: delete policy engine access policy by id or by user/scope
 
+### Policy engine (what this policy means)
+
+The policy commands enforce **who can do what, and where** when operating secrets from the CLI.
+
+- **Principal**: the user account the policy is assigned to.
+- **Scope**: the target area the rule applies to (for example, environment and/or folder).
+- **Allowed actions**: operations a user can perform in that scope (for example, list, add, or delete).
+
+In practice, this gives you centralized access control without changing application code every time permissions change.
+
+Typical flow:
+
+1. Use `policy-save` to create or update a user policy for a scope.
+2. Use `policy-list` to verify active policies.
+3. Use `policy-apply` to load multiple rules from YAML/JSON in one step.
+4. Use `policy-delete` to remove outdated or incorrect permissions.
+
+This policy model helps teams apply least-privilege access, reduce accidental secret exposure, and keep permission changes auditable over time.
+
+Explicit `policy-apply` JSON example:
+
+```json
+{
+  "rules": [
+    {
+      "user": "alice",
+      "new_username": "true",
+      "password": "alice-pass",
+      "environment": "*",
+      "folder": "*",
+      "secret": "*",
+      "permissions": { "read": true, "write": false, "delete": false }
+    }
+  ]
+}
+```
+
 ### Install + run (Windows CMD / PowerShell / macOS / Linux)
 
 ```bash
