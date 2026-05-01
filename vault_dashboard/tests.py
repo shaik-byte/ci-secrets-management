@@ -1,4 +1,6 @@
 import json
+import re
+from pathlib import Path
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
@@ -829,3 +831,10 @@ class AppRoleMachineLoginTests(TestCase):
         )
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response["Content-Type"], "application/json")
+
+
+class MergeConflictMarkerRegressionTests(TestCase):
+    def test_views_file_has_no_merge_conflict_markers(self):
+        content = Path(__file__).with_name("views.py").read_text(encoding="utf-8")
+        marker_pattern = re.compile(r"^(<<<<<<<|=======|>>>>>>>)", re.MULTILINE)
+        self.assertIsNone(marker_pattern.search(content))
