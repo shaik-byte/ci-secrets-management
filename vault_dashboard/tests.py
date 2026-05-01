@@ -949,3 +949,78 @@ class MachineTokenSecretListTests(TestCase):
         )
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response["Content-Type"], "application/json")
+
+
+class MachineTokenRevealSecretTests(TestCase):
+    def setUp(self):
+        self.owner = User.objects.create_user(username="owner_reveal", email="owner_reveal@example.com", password="ownerpass")
+        self.machine_user = User.objects.create_user(username="machine_reveal", email="machine_reveal@example.com", password="machinepass")
+        self.environment = Environment.objects.create(name="prod", created_by=self.owner)
+        self.folder = Folder.objects.create(name="apps", environment=self.environment, owner_email="svc@example.com")
+        self.secret = Secret.objects.create(name="API_KEY", service_name="svc", encrypted_value=b"ciphertext", folder=self.folder)
+
+    def _create_machine_token(self, *, can_read=True):
+        access = AccessPolicy.objects.create(
+            user=self.machine_user,
+            environment=self.environment,
+            can_read=can_read,
+            can_write=False,
+            can_delete=False,
+        )
+        machine_policy = MachinePolicy.objects.create(
+            name=f"machine-reveal-policy-{MachinePolicy.objects.count()+1}",
+            access_policy=access,
+            created_by=self.owner,
+        )
+        plain = f"mvt_reveal_plain_{MachineSessionToken.objects.count()+1}"
+        MachineSessionToken.objects.create(
+            token_hash=dashboard_views.hashlib.sha256(plain.encode()).hexdigest(),
+            machine_policy=machine_policy,
+            expires_at=timezone.now() + timedelta(minutes=10),
+            is_active=True,
+        )
+        return plain
+
+    @patch("vault_dashboard.views.decrypt_value", return_value="super-secret")
+    def test_valid_machine_token_can_reveal_secret_without_redirect(self, _mock_decrypt):
+        token = self._create_machine_token(can_read=True)
+        response = self.client.get(
+            f"/secrets/reveal-secret/{self.secret.id}/",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+            HTTP_ACCEPT="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/json")
+        self.assertNotIn("Location", response)
+        body = response.json()
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["secret"], "super-secret")
+        self.assertEqual(body["auth_type"], "machine_token")
+
+    def test_missing_or_invalid_token_returns_json_auth_errors(self):
+        missing = self.client.get(
+            f"/secrets/reveal-secret/{self.secret.id}/",
+            HTTP_ACCEPT="application/json",
+        )
+        self.assertEqual(missing.status_code, 401)
+        self.assertEqual(missing["Content-Type"], "application/json")
+        self.assertNotIn("Location", missing)
+
+        invalid = self.client.get(
+            f"/secrets/reveal-secret/{self.secret.id}/",
+            HTTP_AUTHORIZATION="Bearer bad-token",
+            HTTP_ACCEPT="application/json",
+        )
+        self.assertEqual(invalid.status_code, 401)
+        self.assertEqual(invalid["Content-Type"], "application/json")
+        self.assertNotIn("Location", invalid)
+
+    def test_token_without_can_read_returns_403(self):
+        token = self._create_machine_token(can_read=False)
+        response = self.client.get(
+            f"/secrets/reveal-secret/{self.secret.id}/",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+            HTTP_ACCEPT="application/json",
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response["Content-Type"], "application/json")

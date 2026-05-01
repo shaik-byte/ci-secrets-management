@@ -608,23 +608,44 @@ def add_secret(request, folder_id):
 # =========================
 # REVEAL SECRET
 # =========================
-@login_required
 def reveal_secret(request, secret_id):
+    is_machine_api = _is_machine_api_request(request)
+    machine_token = None
+    acting_user = request.user if request.user.is_authenticated else None
+    bearer_token = _extract_bearer_token(request)
+
+    if bearer_token:
+        machine_token, error_response = _authenticate_machine_token(bearer_token)
+        if error_response:
+            return error_response
+    elif not acting_user:
+        if is_machine_api:
+            return JsonResponse({"ok": False, "error": "Authentication required."}, status=401)
+        return redirect(f"/accounts/login/?next={request.path}")
+
     secret = get_object_or_404(Secret, id=secret_id)
-    if not _has_access(request.user, "read", secret=secret):
+    if machine_token:
+        access_policy = machine_token.machine_policy.access_policy
+        if access_policy.secret_id and access_policy.secret_id != secret.id:
+            return JsonResponse({"ok": False, "error": "Machine token scope does not allow this secret."}, status=403)
+        if access_policy.folder_id and access_policy.folder_id != secret.folder_id:
+            return JsonResponse({"ok": False, "error": "Machine token scope does not allow this folder."}, status=403)
+        if access_policy.environment_id and access_policy.environment_id != secret.folder.environment_id:
+            return JsonResponse({"ok": False, "error": "Machine token scope does not allow this environment."}, status=403)
+    elif not _has_access(request.user, "read", secret=secret):
         return JsonResponse({"error": "You do not have read access for this secret."}, status=403)
 
     decrypted = decrypt_value(request, secret.encrypted_value)
 
     AuditLog.objects.create(
-        user=acting_user,
+        user=acting_user or machine_token.machine_policy.created_by,
         action='REVEAL',
         entity='Secret',
         details=f"Revealed secret '{secret.name}'",
         ip_address=get_client_ip(request)
     )
 
-    return JsonResponse({"secret": decrypted})
+    return JsonResponse({"ok": True, "secret": decrypted, "auth_type": "machine_token" if machine_token else "session"})
 
 
 @login_required
