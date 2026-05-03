@@ -1119,3 +1119,14 @@ class SecretPathSearchEndpointTests(TestCase):
         payload = response.json()
         self.assertEqual(payload["count"], 1)
         self.assertEqual(payload["results"][0]["secret_name"], "API_KEY")
+
+    def test_search_expiring_secrets_returns_json_results(self):
+        self.secret.expire_date = timezone.now().date()
+        self.secret.save(update_fields=["expire_date"])
+
+        response = self.client.get("/secrets/search-expiring-secrets/?window=today", HTTP_X_REQUESTED_WITH="XMLHttpRequest")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/json")
+        payload = response.json()
+        self.assertEqual(payload["count"], 1)
+        self.assertEqual(payload["results"][0]["secret_name"], "API_KEY")
