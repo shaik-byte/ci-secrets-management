@@ -710,10 +710,14 @@ def _within_search_rate_limit(user_id, limit=30, window_seconds=60, namespace="s
 @login_required
 @require_GET
 def search_secret_paths(request):
+    acting_user = request.user if request.user.is_authenticated else None
     if "vault_key" not in request.session:
         return JsonResponse({"error": "Vault is sealed for this session."}, status=403)
 
-    if not _within_search_rate_limit(request.user.id):
+    if not acting_user:
+        return JsonResponse({"error": "Authentication required."}, status=401)
+
+    if not _within_search_rate_limit(acting_user.id):
         return JsonResponse({"error": "Too many search requests. Please retry shortly."}, status=429)
 
     query = (request.GET.get("q") or "").strip()
@@ -735,7 +739,7 @@ def search_secret_paths(request):
     matches = []
     for secret in search_scope[:max_scan]:
         scanned += 1
-        if not _has_access(request.user, "read", secret=secret):
+        if not _has_access(acting_user, "read", secret=secret):
             continue
 
         matches.append({
@@ -770,10 +774,14 @@ def search_secret_paths(request):
 @login_required
 @require_GET
 def search_expiring_secrets(request):
+    acting_user = request.user if request.user.is_authenticated else None
     if "vault_key" not in request.session:
         return JsonResponse({"error": "Vault is sealed for this session."}, status=403)
 
-    if not _within_search_rate_limit(request.user.id, namespace="expiring-secret-search"):
+    if not acting_user:
+        return JsonResponse({"error": "Authentication required."}, status=401)
+
+    if not _within_search_rate_limit(acting_user.id, namespace="expiring-secret-search"):
         return JsonResponse({"error": "Too many requests. Please retry shortly."}, status=429)
 
     window = (request.GET.get("window") or "today").strip().lower()
@@ -809,7 +817,7 @@ def search_expiring_secrets(request):
     matches = []
     for secret in search_scope[:max_scan]:
         scanned += 1
-        if not _has_access(request.user, "read", secret=secret):
+        if not _has_access(acting_user, "read", secret=secret):
             continue
 
         matches.append({
@@ -829,7 +837,7 @@ def search_expiring_secrets(request):
             break
 
     AuditLog.objects.create(
-        user=request.user,
+        user=acting_user,
         action="READ",
         entity="SecretExpirySearch",
         details=f"Searched expiring secrets, window={window}, target_date={target_date.isoformat()}, results={len(matches)}",
