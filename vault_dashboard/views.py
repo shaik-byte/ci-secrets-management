@@ -42,7 +42,7 @@ import logging
 
 #         # ✅ ADD THIS
 #         AuditLog.objects.create(
-#             user=acting_user or machine_token.machine_policy.created_by,
+#             user=request.user,
 #             action='CREATE',
 #             entity='Environment',
 #             details=f"Created environment '{name}'"
@@ -455,7 +455,7 @@ def add_environment(request):
         env = Environment.objects.create(name=name, created_by=request.user)
 
         AuditLog.objects.create(
-        user=acting_user or machine_token.machine_policy.created_by,
+        user=request.user,
             action='CREATE',
             entity='Environment',
             details=f"Created environment '{name}'",
@@ -639,7 +639,7 @@ def reveal_secret(request, secret_id):
         decrypted = decrypt_value(request, secret.encrypted_value)
 
         AuditLog.objects.create(
-            user=acting_user or machine_token.machine_policy.created_by,
+            user=request.user,
             action='REVEAL',
             entity='Secret',
             details=f"Revealed secret '{secret.name}'",
@@ -667,7 +667,7 @@ def copy_secret(request, secret_id):
     decrypted = decrypt_value(request, secret.encrypted_value)
 
     AuditLog.objects.create(
-        user=acting_user or machine_token.machine_policy.created_by,
+        user=request.user,
         action='COPY',
         entity='Secret',
         details=f"Copied secret '{secret.name}'",
@@ -688,7 +688,7 @@ def copy_root_token(request):
         return JsonResponse({"error": "Vault root token is unavailable in this session."}, status=404)
 
     AuditLog.objects.create(
-        user=acting_user or machine_token.machine_policy.created_by,
+        user=request.user,
         action='ROOT_TOKEN_COPY',
         entity='Vault',
         details="Copied root token from dashboard",
@@ -753,7 +753,7 @@ def search_secret_paths(request):
             break
 
     AuditLog.objects.create(
-        user=acting_user or machine_token.machine_policy.created_by,
+        user=request.user,
         action="READ",
         entity="SecretSearch",
         details=f"Searched secret paths by metadata, query_len={len(query)}, results={len(matches)}",
@@ -829,7 +829,7 @@ def search_expiring_secrets(request):
             break
 
     AuditLog.objects.create(
-        user=acting_user or machine_token.machine_policy.created_by,
+        user=request.user,
         action="READ",
         entity="SecretExpirySearch",
         details=f"Searched expiring secrets, window={window}, target_date={target_date.isoformat()}, results={len(matches)}",
@@ -916,7 +916,7 @@ def run_vault_analysis(request):
     )
 
     AuditLog.objects.create(
-        user=acting_user or machine_token.machine_policy.created_by,
+        user=request.user,
         action="READ",
         entity="VaultAnalysis",
         details=f"Ran vault analysis (hours={hours}, alerts={len(payload.get('alert_groups', []))})",
@@ -943,7 +943,7 @@ def query_vault_analysis(request):
         return JsonResponse(result, status=400)
 
     AuditLog.objects.create(
-        user=acting_user or machine_token.machine_policy.created_by,
+        user=request.user,
         action="READ",
         entity="VaultAnalysisNLQ",
         details=f"Executed vault NL query (len={len(query_text)}, results={result.get('count', 0)})",
@@ -1071,7 +1071,7 @@ def update_analysis_incident(request, incident_id):
     incident.save()
 
     AuditLog.objects.create(
-        user=acting_user or machine_token.machine_policy.created_by,
+        user=request.user,
         action="UPDATE",
         entity="VaultAnalysisIncident",
         details=f"Updated incident {incident.incident_key} status={incident.status} assignee={incident.assignee.username if incident.assignee else '-'} fp={incident.false_positive}",
@@ -1131,7 +1131,7 @@ def toggle_secret_access(request, secret_id):
     state = "enabled" if secret.is_access_enabled else "disabled"
 
     AuditLog.objects.create(
-        user=acting_user or machine_token.machine_policy.created_by,
+        user=request.user,
         action='UPDATE',
         entity='Secret',
         details=f"Admin {state} reveal access for secret '{secret.name}'",
@@ -1198,7 +1198,7 @@ def update_secret_value(request, secret_id):
     secret.save(update_fields=["encrypted_value"])
 
     AuditLog.objects.create(
-        user=acting_user or machine_token.machine_policy.created_by,
+        user=request.user,
         action='UPDATE',
         entity='Secret',
         details=f"Updated value for secret '{secret.name}'",
@@ -1405,7 +1405,7 @@ def reject_deletion_request(request, approval_id):
     approval.save(update_fields=["status", "approver", "decision_note", "decided_at", "updated_at"])
 
     AuditLog.objects.create(
-        user=acting_user or machine_token.machine_policy.created_by,
+        user=request.user,
         action='UPDATE',
         entity=approval.target_type.capitalize(),
         details=f"Rejected deletion request #{approval.id} for '{approval.target_name}' from '{approval.requested_by.username}'",
@@ -1429,7 +1429,7 @@ def toggle_environment_delete_approval(request, env_id):
 
     state = "enabled" if env.require_admin_delete_approval else "disabled"
     AuditLog.objects.create(
-        user=acting_user or machine_token.machine_policy.created_by,
+        user=request.user,
         action='UPDATE',
         entity='Environment',
         details=f"Admin {state} manual delete approval mode for environment '{env.name}'",
@@ -2109,7 +2109,7 @@ def cli_list_secrets(request):
         rows.append(item)
 
     AuditLog.objects.create(
-        user=acting_user or machine_token.machine_policy.created_by,
+        user=request.user,
         action="REVEAL" if show_values else "COPY",
         entity="Secret",
         details=(
@@ -2187,7 +2187,7 @@ def cli_add_secret(request):
         folder=folder,
     )
     AuditLog.objects.create(
-        user=acting_user or machine_token.machine_policy.created_by,
+        user=request.user,
         action="CREATE",
         entity="Secret",
         details=f"[CLI] Created secret '{name}' in folder '{folder.name}'",
@@ -2261,7 +2261,7 @@ def cli_delete_secret(request):
     deleted = {"id": secret.id, "name": secret.name}
     secret.delete()
     AuditLog.objects.create(
-        user=acting_user or machine_token.machine_policy.created_by,
+        user=request.user,
         action="DELETE",
         entity="Secret",
         details=f"[CLI] Deleted secret '{deleted['name']}' from folder '{folder.name}'",
@@ -2299,7 +2299,7 @@ def cli_apply_policy(request):
         return JsonResponse({"ok": False, "error": str(exc)}, status=400)
 
     AuditLog.objects.create(
-        user=acting_user or machine_token.machine_policy.created_by,
+        user=request.user,
         action="UPDATE",
         entity="AccessPolicy",
         details=f"[CLI] Applied policy document. Updated {updated} rule(s), skipped {skipped}.",

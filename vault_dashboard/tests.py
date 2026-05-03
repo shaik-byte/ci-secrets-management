@@ -1098,3 +1098,24 @@ class MachineTokenRevealSecretTests(TestCase):
         self.assertEqual(response.status_code, 500)
         self.assertEqual(response["Content-Type"], "application/json")
         self.assertEqual(response.json()["error"], "decrypt failure")
+
+
+class SecretPathSearchEndpointTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_superuser(username="searchadmin", email="search@example.com", password="pass1234")
+        self.client.force_login(self.user)
+        session = self.client.session
+        session["vault_key"] = "dummy-session-key"
+        session.save()
+
+        self.environment = Environment.objects.create(name="test", created_by=self.user)
+        self.folder = Folder.objects.create(name="shaik", environment=self.environment, owner_email="owner@example.com")
+        self.secret = Secret.objects.create(name="API_KEY", service_name="svc", encrypted_value=b"x", folder=self.folder)
+
+    def test_search_secret_paths_returns_json_results(self):
+        response = self.client.get("/secrets/search-secret-paths/?q=shaik", HTTP_X_REQUESTED_WITH="XMLHttpRequest")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/json")
+        payload = response.json()
+        self.assertEqual(payload["count"], 1)
+        self.assertEqual(payload["results"][0]["secret_name"], "API_KEY")
