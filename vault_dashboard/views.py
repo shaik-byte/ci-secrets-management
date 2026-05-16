@@ -285,17 +285,6 @@ def _visible_environments_for_user(user):
     return visible_environments
 
 
-def _notification_count_for_visible_secrets(environments):
-    notify_before = timezone.now().date() + timedelta(days=1)
-    count = 0
-    for env in environments:
-        for folder in getattr(env, "visible_folders", []):
-            for secret in getattr(folder, "visible_secrets", []):
-                if secret.expire_date and secret.expire_date <= notify_before:
-                    count += 1
-    return count
-
-
 def _access_policy_sync_state():
     aggregate = AccessPolicy.objects.aggregate(last_updated_at=Max("updated_at"), rule_count=Count("id"))
     last_updated_at = aggregate.get("last_updated_at")
@@ -450,7 +439,6 @@ def dashboard(request):
         "can_view_policy": "policy" in visible_feature_keys,
         "can_view_approvals": "approvals" in visible_feature_keys,
         "can_view_notifications": "notifications" in visible_feature_keys,
-        "notification_count": _notification_count_for_visible_secrets(environments),
         "can_view_audit_logs": "audit_logs" in visible_feature_keys,
         "can_view_seal_vault": "seal_vault" in visible_feature_keys,
         "can_view_analysis": "analysis" in visible_feature_keys,
@@ -485,15 +473,6 @@ def _reject_lockout_if_needed(request, active_cidr_ranges):
         return True
     return False
 
-
-@login_required
-@require_GET
-def notification_count(request):
-    if not user_has_feature(request.user, "notifications"):
-        return JsonResponse({"error": "You do not have notifications feature access."}, status=403)
-
-    environments = _visible_environments_for_user(request.user)
-    return JsonResponse({"count": _notification_count_for_visible_secrets(environments)})
 
 
 # =========================

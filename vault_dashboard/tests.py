@@ -1132,7 +1132,7 @@ class SecretPathSearchEndpointTests(TestCase):
         self.assertEqual(payload["results"][0]["secret_name"], "API_KEY")
 
 
-class NotificationBellTests(TestCase):
+class NotificationNavTests(TestCase):
     def setUp(self):
         self.admin = User.objects.create_superuser(username="notifyadmin", email="notifyadmin@example.com", password="rootpass")
         self.client.force_login(self.admin)
@@ -1140,40 +1140,16 @@ class NotificationBellTests(TestCase):
         session["vault_key"] = base64.b64encode(b"0123456789abcdef0123456789abcdef").decode()
         session.save()
 
-        self.environment = Environment.objects.create(name="prod", created_by=self.admin)
-        self.folder = Folder.objects.create(name="apps", environment=self.environment, owner_email="owner@example.com")
-
-    def test_notification_link_renders_bell_with_expiring_secret_count(self):
-        Secret.objects.create(
-            name="API_KEY",
-            service_name="svc",
-            encrypted_value=b"x",
-            expire_date=timezone.now().date(),
-            folder=self.folder,
-        )
-        Secret.objects.create(
-            name="FUTURE_KEY",
-            service_name="svc",
-            encrypted_value=b"x",
-            expire_date=timezone.now().date() + timedelta(days=30),
-            folder=self.folder,
-        )
-
+    def test_notification_nav_renders_as_standard_text_button_without_badge(self):
         response = self.client.get("/secrets/")
 
         self.assertEqual(response.status_code, 200)
         html = response.content.decode("utf-8")
-        self.assertIn('aria-label="Notifications"', html)
-        self.assertIn("🔔", html)
-        self.assertIn(">Notifications</span>", html)
-        self.assertIn('id="notification-count-badge"', html)
-        self.assertIn('notification-count-badge bg-danger text-white', html)
-        self.assertIn(">1</span>", html)
+        self.assertIn('href="/notifications/" class="btn btn-outline-primary btn-sm"', html)
+        self.assertIn("Notifications", html)
+        self.assertNotIn("🔔", html)
+        self.assertNotIn("notification-count-badge", html)
 
-        count_response = self.client.get("/secrets/notifications/count/")
-
-        self.assertEqual(count_response.status_code, 200)
-        self.assertEqual(count_response.json(), {"count": 1})
 
 
 class TrustedCIDRAllowlistTests(TestCase):
