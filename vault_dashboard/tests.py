@@ -1171,6 +1171,20 @@ class TrustedCIDRAllowlistTests(TestCase):
 
         self.assertNotEqual(response.status_code, 403)
 
+    def test_dashboard_renders_trusted_cidr_rows_in_read_only_mode_until_edit(self):
+        from .models import TrustedCIDR
+
+        TrustedCIDR.objects.create(cidr_range="127.0.0.1/32", description="Localhost", created_by=self.admin)
+
+        response = self.client.get("/secrets/", REMOTE_ADDR="127.0.0.1")
+
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode("utf-8")
+        self.assertIn("trusted-cidr-edit-btn", html)
+        self.assertIn(">Edit</button>", html)
+        self.assertIn("trusted-cidr-save-btn d-none", html)
+        self.assertIn('name="description" class="form-control form-control-sm trusted-cidr-edit-field"', html)
+        self.assertIn('value="Localhost" disabled', html)
 
     def test_admin_cannot_create_active_allowlist_that_excludes_current_ip(self):
         from .models import TrustedCIDR

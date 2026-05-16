@@ -746,18 +746,20 @@
                             <code>{{ trusted_cidr.cidr_range }}</code>
                         </td>
                         <td>
-                            <input form="trusted-cidr-update-{{ trusted_cidr.id }}" type="text" name="description" class="form-control form-control-sm" maxlength="300" value="{{ trusted_cidr.description }}">
+                            <input form="trusted-cidr-update-{{ trusted_cidr.id }}" type="text" name="description" class="form-control form-control-sm trusted-cidr-edit-field" maxlength="300" value="{{ trusted_cidr.description }}" disabled>
                         </td>
                         <td>
                             <div class="form-check form-switch">
-                                <input form="trusted-cidr-update-{{ trusted_cidr.id }}" class="form-check-input" type="checkbox" name="is_active" id="trusted-cidr-active-{{ trusted_cidr.id }}" {% if trusted_cidr.is_active %}checked{% endif %}>
+                                <input form="trusted-cidr-update-{{ trusted_cidr.id }}" class="form-check-input trusted-cidr-edit-field" type="checkbox" name="is_active" id="trusted-cidr-active-{{ trusted_cidr.id }}" {% if trusted_cidr.is_active %}checked{% endif %} disabled>
                                 <label class="form-check-label small" for="trusted-cidr-active-{{ trusted_cidr.id }}">Active</label>
                             </div>
                         </td>
                         <td>{{ trusted_cidr.created_by.username }}</td>
                         <td>{{ trusted_cidr.updated_at|date:"Y-m-d H:i" }}</td>
                         <td class="text-end">
-                            <button form="trusted-cidr-update-{{ trusted_cidr.id }}" type="submit" class="btn btn-outline-primary btn-sm">Save</button>
+                            <button type="button" class="btn btn-outline-primary btn-sm trusted-cidr-edit-btn" data-form-id="trusted-cidr-update-{{ trusted_cidr.id }}">Edit</button>
+                            <button form="trusted-cidr-update-{{ trusted_cidr.id }}" type="submit" class="btn btn-primary btn-sm trusted-cidr-save-btn d-none">Save</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm trusted-cidr-cancel-btn d-none" data-form-id="trusted-cidr-update-{{ trusted_cidr.id }}">Cancel</button>
                             <form method="POST" action="{% url 'delete_trusted_cidr' trusted_cidr.id %}" class="d-inline" onsubmit="return confirm('Delete trusted CIDR {{ trusted_cidr.cidr_range }}?');">
                                 {% csrf_token %}
                                 <button type="submit" class="btn btn-outline-danger btn-sm mt-1">Delete</button>
@@ -2139,10 +2141,57 @@ async function copyRootToken() {
     }
 }
 
+function setTrustedCIDREditMode(form, isEditing) {
+    const row = form.closest("tr");
+    if (!row) return;
+
+    row.querySelectorAll(".trusted-cidr-edit-field").forEach((field) => {
+        if (!isEditing) {
+            if (field.type === "checkbox") {
+                field.checked = field.defaultChecked;
+            } else {
+                field.value = field.defaultValue;
+            }
+        }
+        field.disabled = !isEditing;
+    });
+
+    row.querySelector(".trusted-cidr-edit-btn")?.classList.toggle("d-none", isEditing);
+    row.querySelector(".trusted-cidr-save-btn")?.classList.toggle("d-none", !isEditing);
+    row.querySelector(".trusted-cidr-cancel-btn")?.classList.toggle("d-none", !isEditing);
+}
+
+function initializeTrustedCIDREditControls() {
+    document.querySelectorAll(".trusted-cidr-edit-btn").forEach((button) => {
+        button.addEventListener("click", () => {
+            const form = document.getElementById(button.dataset.formId);
+            if (form) setTrustedCIDREditMode(form, true);
+        });
+    });
+
+    document.querySelectorAll(".trusted-cidr-cancel-btn").forEach((button) => {
+        button.addEventListener("click", () => {
+            const form = document.getElementById(button.dataset.formId);
+            if (form) setTrustedCIDREditMode(form, false);
+        });
+    });
+
+    document.querySelectorAll("form[id^='trusted-cidr-update-']").forEach((form) => {
+        form.addEventListener("submit", () => {
+            const row = form.closest("tr");
+            if (!row) return;
+            row.querySelectorAll(".trusted-cidr-edit-field").forEach((field) => {
+                field.disabled = false;
+            });
+        });
+    });
+}
+
 document.addEventListener("DOMContentLoaded", function () {
     startVaultHeartbeat();
     startAccessPolicySyncPolling();
     initializeSidebarToggle();
+    initializeTrustedCIDREditControls();
 
     const requestedSection = new URLSearchParams(window.location.search).get("section");
     const savedSection = localStorage.getItem("vault_active_section");
@@ -2188,6 +2237,7 @@ async function refreshContentArea(sectionName = "secrets") {
     if (newContent && currentContent) {
         currentContent.innerHTML = newContent.innerHTML;
         initializeSidebarToggle();
+        initializeTrustedCIDREditControls();
         showSection(sectionName, { updateUrl: false });
         clearModalArtifacts();
     }
