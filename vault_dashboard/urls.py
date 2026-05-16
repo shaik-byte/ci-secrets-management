@@ -11,6 +11,7 @@ urlpatterns = [
     path('copy-root-token/', views.copy_root_token, name="copy_root_token"),
     path('search-secret-paths/', views.search_secret_paths, name="search_secret_paths"),
     path('search-expiring-secrets/', views.search_expiring_secrets, name="search_expiring_secrets"),
+    path('notifications/count/', views.notification_count, name="notification_count"),
     path('analysis/run/', views.run_vault_analysis, name="run_vault_analysis"),
     path('analysis/query/', views.query_vault_analysis, name="query_vault_analysis"),
     path('analysis/incidents/', views.list_analysis_incidents, name="list_analysis_incidents"),

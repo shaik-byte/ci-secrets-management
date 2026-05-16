@@ -142,6 +142,34 @@
             box-shadow: 0 0 0 0.15rem rgba(148, 197, 255, 0.35);
         }
 
+        .notification-bell-link {
+            position: relative;
+            width: 36px;
+            height: 36px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 999px;
+            font-size: 1.15rem;
+            line-height: 1;
+        }
+
+        .notification-count-badge {
+            position: absolute;
+            top: -7px;
+            right: -8px;
+            min-width: 20px;
+            height: 20px;
+            padding: 0 6px;
+            border-radius: 999px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.68rem;
+            font-weight: 700;
+            border: 2px solid #ffffff;
+        }
+
         body.sidebar-collapsed .sidebar {
             width: 0;
             padding-left: 0;
@@ -385,8 +413,9 @@
                 {{ request.user.username }}
             </span>
             {% if can_view_notifications %}
-            <a href="{% url 'notifications' %}" class="btn btn-outline-primary btn-sm">
-                Notifications
+            <a id="notification-bell-link" href="{% url 'notifications' %}" class="btn btn-outline-primary btn-sm notification-bell-link" aria-label="Notifications" title="Notifications" data-count-url="{% url 'notification_count' %}">
+                <span aria-hidden="true">🔔</span>
+                <span id="notification-count-badge" class="notification-count-badge bg-danger text-white {% if not notification_count %}d-none{% endif %}" aria-label="{{ notification_count }} notification{{ notification_count|pluralize }}">{{ notification_count|default:0 }}</span>
             </a>
             {% endif %}
             {% if can_view_audit_logs %}
@@ -1967,6 +1996,41 @@ function startVaultHeartbeat() {
     setInterval(heartbeat, 10000);
 }
 
+function updateNotificationBellBadge(count) {
+    const badge = document.getElementById("notification-count-badge");
+    if (!badge) return;
+
+    const normalizedCount = Number.parseInt(count, 10) || 0;
+    badge.textContent = normalizedCount;
+    badge.setAttribute("aria-label", `${normalizedCount} notification${normalizedCount === 1 ? "" : "s"}`);
+    badge.classList.toggle("d-none", normalizedCount <= 0);
+}
+
+function startNotificationCountPolling() {
+    const refresh = async () => {
+        const link = document.getElementById("notification-bell-link");
+        if (!link?.dataset.countUrl || vaultUnavailableLocked) return;
+
+        try {
+            const response = await nativeFetch(link.dataset.countUrl, {
+                method: "GET",
+                credentials: "same-origin",
+                headers: { "X-Requested-With": "XMLHttpRequest" },
+                cache: "no-store",
+            });
+            if (!response.ok) return;
+
+            const payload = await response.json();
+            updateNotificationBellBadge(payload?.count);
+        } catch (_) {
+            // Notification count refresh is best-effort; heartbeat handles connectivity issues.
+        }
+    };
+
+    refresh();
+    setInterval(refresh, 30000);
+}
+
 function startAccessPolicySyncPolling() {
     const poll = async () => {
         if (vaultUnavailableLocked) return;
@@ -2180,6 +2244,7 @@ function initializeTrustedCIDREditControls() {
 
 document.addEventListener("DOMContentLoaded", function () {
     startVaultHeartbeat();
+    startNotificationCountPolling();
     startAccessPolicySyncPolling();
     initializeSidebarToggle();
     initializeTrustedCIDREditControls();
