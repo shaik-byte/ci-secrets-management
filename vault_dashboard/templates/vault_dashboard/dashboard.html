@@ -144,12 +144,16 @@
 
         .notification-bell-link {
             position: relative;
-            width: 36px;
-            height: 36px;
+            min-height: 36px;
             display: inline-flex;
             align-items: center;
             justify-content: center;
+            gap: 0.35rem;
             border-radius: 999px;
+            line-height: 1;
+        }
+
+        .notification-bell-icon {
             font-size: 1.15rem;
             line-height: 1;
         }
@@ -414,7 +418,8 @@
             </span>
             {% if can_view_notifications %}
             <a id="notification-bell-link" href="{% url 'notifications' %}" class="btn btn-outline-primary btn-sm notification-bell-link" aria-label="Notifications" title="Notifications" data-count-url="{% url 'notification_count' %}">
-                <span aria-hidden="true">🔔</span>
+                <span class="notification-bell-icon" aria-hidden="true">🔔</span>
+                <span>Notifications</span>
                 <span id="notification-count-badge" class="notification-count-badge bg-danger text-white {% if not notification_count %}d-none{% endif %}" aria-label="{{ notification_count }} notification{{ notification_count|pluralize }}">{{ notification_count|default:0 }}</span>
             </a>
             {% endif %}

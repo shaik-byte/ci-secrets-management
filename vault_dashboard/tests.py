@@ -1165,6 +1165,7 @@ class NotificationBellTests(TestCase):
         html = response.content.decode("utf-8")
         self.assertIn('aria-label="Notifications"', html)
         self.assertIn("🔔", html)
+        self.assertIn(">Notifications</span>", html)
         self.assertIn('id="notification-count-badge"', html)
         self.assertIn('notification-count-badge bg-danger text-white', html)
         self.assertIn(">1</span>", html)
