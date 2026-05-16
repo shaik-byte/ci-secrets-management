@@ -49,6 +49,7 @@ MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'vault.middleware.VaultHardSealMiddleware',
+    'vault_dashboard.middleware.TrustedCIDRAllowlistMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -57,6 +58,11 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'vault_dashboard.middleware.AutoSealMiddleware',
 ]
+
+# Trusted CIDR allowlist uses REMOTE_ADDR by default. Only enable proxy headers
+# when Django is deployed behind a trusted reverse proxy that overwrites them.
+TRUSTED_CIDR_TRUST_PROXY_HEADERS = os.getenv("TRUSTED_CIDR_TRUST_PROXY_HEADERS", "false").lower() == "true"
+TRUSTED_CIDR_IP_HEADER = os.getenv("TRUSTED_CIDR_IP_HEADER", "REMOTE_ADDR")
 
 ROOT_URLCONF = 'config.urls'
 

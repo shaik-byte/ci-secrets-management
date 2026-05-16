@@ -1130,3 +1130,118 @@ class SecretPathSearchEndpointTests(TestCase):
         payload = response.json()
         self.assertEqual(payload["count"], 1)
         self.assertEqual(payload["results"][0]["secret_name"], "API_KEY")
+
+
+class NotificationNavTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_superuser(username="notifyadmin", email="notifyadmin@example.com", password="rootpass")
+        self.client.force_login(self.admin)
+        session = self.client.session
+        session["vault_key"] = base64.b64encode(b"0123456789abcdef0123456789abcdef").decode()
+        session.save()
+
+    def test_notification_nav_renders_as_standard_text_button_without_badge(self):
+        response = self.client.get("/secrets/")
+
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode("utf-8")
+        self.assertIn('href="/notifications/" class="btn btn-outline-primary btn-sm"', html)
+        self.assertIn("Notifications", html)
+        self.assertNotIn("🔔", html)
+        self.assertNotIn("notification-count-badge", html)
+
+
+
+class TrustedCIDRAllowlistTests(TestCase):
+    def setUp(self):
+        from django.core.cache import cache
+
+        cache.clear()
+        self.admin = User.objects.create_superuser(username="cidradmin", email="cidradmin@example.com", password="rootpass")
+        self.client.force_login(self.admin)
+        session = self.client.session
+        session["vault_key"] = base64.b64encode(b"0123456789abcdef0123456789abcdef").decode()
+        session.save()
+
+    def test_request_is_blocked_when_active_allowlist_does_not_include_remote_addr(self):
+        from .models import TrustedCIDR
+
+        TrustedCIDR.objects.create(cidr_range="10.0.0.0/8", description="Private network", created_by=self.admin)
+
+        response = self.client.get("/secrets/", REMOTE_ADDR="203.0.113.10")
+
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("trusted CIDR allowlist", response.content.decode("utf-8"))
+
+    def test_request_is_allowed_when_remote_addr_matches_active_allowlist(self):
+        from .models import TrustedCIDR
+
+        TrustedCIDR.objects.create(cidr_range="203.0.113.0/24", description="Office", created_by=self.admin)
+
+        response = self.client.get("/secrets/", REMOTE_ADDR="203.0.113.10")
+
+        self.assertNotEqual(response.status_code, 403)
+
+    def test_inactive_allowlist_entries_do_not_block_requests(self):
+        from .models import TrustedCIDR
+
+        TrustedCIDR.objects.create(cidr_range="10.0.0.0/8", description="Disabled", is_active=False, created_by=self.admin)
+
+        response = self.client.get("/secrets/", REMOTE_ADDR="203.0.113.10")
+
+        self.assertNotEqual(response.status_code, 403)
+
+    def test_dashboard_renders_trusted_cidr_rows_in_read_only_mode_until_edit(self):
+        from .models import TrustedCIDR
+
+        TrustedCIDR.objects.create(cidr_range="127.0.0.1/32", description="Localhost", created_by=self.admin)
+
+        response = self.client.get("/secrets/", REMOTE_ADDR="127.0.0.1")
+
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode("utf-8")
+        self.assertIn("trusted-cidr-edit-btn", html)
+        self.assertIn(">Edit</button>", html)
+        self.assertIn("trusted-cidr-save-btn d-none", html)
+        self.assertIn('name="description" class="form-control form-control-sm trusted-cidr-edit-field"', html)
+        self.assertIn('value="Localhost" disabled', html)
+
+    def test_admin_cannot_create_active_allowlist_that_excludes_current_ip(self):
+        from .models import TrustedCIDR
+
+        response = self.client.post(
+            "/secrets/settings/trusted-cidrs/create/",
+            {"cidr_range": "10.0.0.0/8", "description": "Wrong network", "is_active": "on"},
+            REMOTE_ADDR="127.0.0.1",
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(TrustedCIDR.objects.exists())
+
+    def test_admin_can_create_and_delete_multiple_trusted_cidrs(self):
+        first = self.client.post(
+            "/secrets/settings/trusted-cidrs/create/",
+            {"cidr_range": "127.0.0.1/32", "description": "Localhost", "is_active": "on"},
+            REMOTE_ADDR="127.0.0.1",
+        )
+        second = self.client.post(
+            "/secrets/settings/trusted-cidrs/create/",
+            {"cidr_range": "127.0.0.0/8", "description": "Loopback", "is_active": "on"},
+            REMOTE_ADDR="127.0.0.1",
+        )
+
+        self.assertEqual(first.status_code, 302)
+        self.assertEqual(second.status_code, 302)
+
+        from .models import TrustedCIDR
+
+        self.assertEqual(TrustedCIDR.objects.count(), 2)
+        cidr = TrustedCIDR.objects.get(cidr_range="127.0.0.1/32")
+
+        delete_response = self.client.post(
+            f"/secrets/settings/trusted-cidrs/{cidr.id}/delete/",
+            REMOTE_ADDR="127.0.0.1",
+        )
+
+        self.assertEqual(delete_response.status_code, 302)
+        self.assertFalse(TrustedCIDR.objects.filter(id=cidr.id).exists())

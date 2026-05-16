@@ -2,7 +2,7 @@
 {% load static %}
 <html>
 <head>
-    <title>Secrets Manager</title>
+    <title>Enigma Vault</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
 
@@ -418,11 +418,6 @@
     </div>
     {% endif %}
 
-    <div id="welcome-panel" class="card p-4 mb-4 shadow-sm text-center">
-        <h5 class="mb-2">Choose a module from the sidebar</h5>
-        <p class="text-muted mb-0">Click <strong>Secrets Manager</strong> to load all secrets on the right side.</p>
-    </div>
-
     <div id="secret-path-search-panel" class="card p-4 mb-4 shadow-sm dashboard-search-card">
         <h5 class="mb-2">Find secret location</h5>
         <p class="text-muted mb-3">Search by secret metadata (name/service/path). Results only include secrets you can read.</p>
@@ -703,6 +698,78 @@
         </form>
 
         {% if request.user.is_superuser %}
+        <hr class="my-4">
+        <h5 class="mb-2">Trusted CIDR Allowlist</h5>
+        <p class="text-muted mb-3">When at least one active CIDR is configured, only requests from active trusted networks can access the application.</p>
+        <form method="POST" action="{% url 'create_trusted_cidr' %}" class="row g-2 align-items-end mb-3">
+            {% csrf_token %}
+            <div class="col-md-3">
+                <label class="form-label">CIDR Range</label>
+                <input type="text" name="cidr_range" class="form-control" placeholder="Example: 203.0.113.0/24" required>
+            </div>
+            <div class="col-md-5">
+                <label class="form-label">Description</label>
+                <input type="text" name="description" class="form-control" maxlength="300" placeholder="Office VPN, CI runner subnet, etc.">
+            </div>
+            <div class="col-md-2 form-check mt-4">
+                <input class="form-check-input" type="checkbox" id="trusted-cidr-active" name="is_active" checked>
+                <label class="form-check-label" for="trusted-cidr-active">Active</label>
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary w-100">Add CIDR</button>
+            </div>
+        </form>
+        <div class="table-responsive">
+            <table class="table table-sm align-middle">
+                <thead>
+                    <tr>
+                        <th>CIDR Range</th>
+                        <th>Description</th>
+                        <th>Status</th>
+                        <th>Created By</th>
+                        <th>Updated</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for trusted_cidr in trusted_cidrs %}
+                    <tr>
+                        <td>
+                            <form id="trusted-cidr-update-{{ trusted_cidr.id }}" method="POST" action="{% url 'update_trusted_cidr' trusted_cidr.id %}">
+                                {% csrf_token %}
+                            </form>
+                            <code>{{ trusted_cidr.cidr_range }}</code>
+                        </td>
+                        <td>
+                            <input form="trusted-cidr-update-{{ trusted_cidr.id }}" type="text" name="description" class="form-control form-control-sm trusted-cidr-edit-field" maxlength="300" value="{{ trusted_cidr.description }}" disabled>
+                        </td>
+                        <td>
+                            <div class="form-check form-switch">
+                                <input form="trusted-cidr-update-{{ trusted_cidr.id }}" class="form-check-input trusted-cidr-edit-field" type="checkbox" name="is_active" id="trusted-cidr-active-{{ trusted_cidr.id }}" {% if trusted_cidr.is_active %}checked{% endif %} disabled>
+                                <label class="form-check-label small" for="trusted-cidr-active-{{ trusted_cidr.id }}">Active</label>
+                            </div>
+                        </td>
+                        <td>{{ trusted_cidr.created_by.username }}</td>
+                        <td>{{ trusted_cidr.updated_at|date:"Y-m-d H:i" }}</td>
+                        <td class="text-end">
+                            <button type="button" class="btn btn-outline-primary btn-sm trusted-cidr-edit-btn" data-form-id="trusted-cidr-update-{{ trusted_cidr.id }}">Edit</button>
+                            <button form="trusted-cidr-update-{{ trusted_cidr.id }}" type="submit" class="btn btn-primary btn-sm trusted-cidr-save-btn d-none">Save</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm trusted-cidr-cancel-btn d-none" data-form-id="trusted-cidr-update-{{ trusted_cidr.id }}">Cancel</button>
+                            <form method="POST" action="{% url 'delete_trusted_cidr' trusted_cidr.id %}" class="d-inline" onsubmit="return confirm('Delete trusted CIDR {{ trusted_cidr.cidr_range }}?');">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-outline-danger btn-sm mt-1">Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="6" class="text-muted">No trusted CIDRs configured. Access is currently unrestricted by CIDR.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
         <hr class="my-4">
         <h5 class="mb-2">Root Token (Admin only)</h5>
         <p class="text-muted mb-3">Copy root token to clipboard. Token value is never rendered in this UI. Every copy action is logged in audit logs.</p>
@@ -1941,7 +2008,6 @@ function showSection(section, options = {}) {
         approvals: "Approvals",
     };
 
-    const welcome = document.getElementById("welcome-panel");
     const secretPathSearchPanel = document.getElementById("secret-path-search-panel");
     const expiringSecretsPanel = document.getElementById("expiring-secrets-panel");
     const dashboardBtn = document.getElementById("nav-dashboard");
@@ -1960,9 +2026,6 @@ function showSection(section, options = {}) {
         dashboardBtn.classList.toggle("active", isDashboard);
     }
 
-    if (welcome) {
-        welcome.style.display = isDashboard ? "block" : "none";
-    }
     if (secretPathSearchPanel) {
         secretPathSearchPanel.style.display = isDashboard ? "block" : "none";
     }
@@ -2069,10 +2132,57 @@ async function copyRootToken() {
     }
 }
 
+function setTrustedCIDREditMode(form, isEditing) {
+    const row = form.closest("tr");
+    if (!row) return;
+
+    row.querySelectorAll(".trusted-cidr-edit-field").forEach((field) => {
+        if (!isEditing) {
+            if (field.type === "checkbox") {
+                field.checked = field.defaultChecked;
+            } else {
+                field.value = field.defaultValue;
+            }
+        }
+        field.disabled = !isEditing;
+    });
+
+    row.querySelector(".trusted-cidr-edit-btn")?.classList.toggle("d-none", isEditing);
+    row.querySelector(".trusted-cidr-save-btn")?.classList.toggle("d-none", !isEditing);
+    row.querySelector(".trusted-cidr-cancel-btn")?.classList.toggle("d-none", !isEditing);
+}
+
+function initializeTrustedCIDREditControls() {
+    document.querySelectorAll(".trusted-cidr-edit-btn").forEach((button) => {
+        button.addEventListener("click", () => {
+            const form = document.getElementById(button.dataset.formId);
+            if (form) setTrustedCIDREditMode(form, true);
+        });
+    });
+
+    document.querySelectorAll(".trusted-cidr-cancel-btn").forEach((button) => {
+        button.addEventListener("click", () => {
+            const form = document.getElementById(button.dataset.formId);
+            if (form) setTrustedCIDREditMode(form, false);
+        });
+    });
+
+    document.querySelectorAll("form[id^='trusted-cidr-update-']").forEach((form) => {
+        form.addEventListener("submit", () => {
+            const row = form.closest("tr");
+            if (!row) return;
+            row.querySelectorAll(".trusted-cidr-edit-field").forEach((field) => {
+                field.disabled = false;
+            });
+        });
+    });
+}
+
 document.addEventListener("DOMContentLoaded", function () {
     startVaultHeartbeat();
     startAccessPolicySyncPolling();
     initializeSidebarToggle();
+    initializeTrustedCIDREditControls();
 
     const requestedSection = new URLSearchParams(window.location.search).get("section");
     const savedSection = localStorage.getItem("vault_active_section");
@@ -2118,6 +2228,7 @@ async function refreshContentArea(sectionName = "secrets") {
     if (newContent && currentContent) {
         currentContent.innerHTML = newContent.innerHTML;
         initializeSidebarToggle();
+        initializeTrustedCIDREditControls();
         showSection(sectionName, { updateUrl: false });
         clearModalArtifacts();
     }
