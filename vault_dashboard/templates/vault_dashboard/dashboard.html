@@ -704,6 +704,76 @@
 
         {% if request.user.is_superuser %}
         <hr class="my-4">
+        <h5 class="mb-2">Trusted CIDR Allowlist</h5>
+        <p class="text-muted mb-3">When at least one active CIDR is configured, only requests from active trusted networks can access the application.</p>
+        <form method="POST" action="{% url 'create_trusted_cidr' %}" class="row g-2 align-items-end mb-3">
+            {% csrf_token %}
+            <div class="col-md-3">
+                <label class="form-label">CIDR Range</label>
+                <input type="text" name="cidr_range" class="form-control" placeholder="Example: 203.0.113.0/24" required>
+            </div>
+            <div class="col-md-5">
+                <label class="form-label">Description</label>
+                <input type="text" name="description" class="form-control" maxlength="300" placeholder="Office VPN, CI runner subnet, etc.">
+            </div>
+            <div class="col-md-2 form-check mt-4">
+                <input class="form-check-input" type="checkbox" id="trusted-cidr-active" name="is_active" checked>
+                <label class="form-check-label" for="trusted-cidr-active">Active</label>
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary w-100">Add CIDR</button>
+            </div>
+        </form>
+        <div class="table-responsive">
+            <table class="table table-sm align-middle">
+                <thead>
+                    <tr>
+                        <th>CIDR Range</th>
+                        <th>Description</th>
+                        <th>Status</th>
+                        <th>Created By</th>
+                        <th>Updated</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for trusted_cidr in trusted_cidrs %}
+                    <tr>
+                        <td>
+                            <form id="trusted-cidr-update-{{ trusted_cidr.id }}" method="POST" action="{% url 'update_trusted_cidr' trusted_cidr.id %}">
+                                {% csrf_token %}
+                            </form>
+                            <code>{{ trusted_cidr.cidr_range }}</code>
+                        </td>
+                        <td>
+                            <input form="trusted-cidr-update-{{ trusted_cidr.id }}" type="text" name="description" class="form-control form-control-sm" maxlength="300" value="{{ trusted_cidr.description }}">
+                        </td>
+                        <td>
+                            <div class="form-check form-switch">
+                                <input form="trusted-cidr-update-{{ trusted_cidr.id }}" class="form-check-input" type="checkbox" name="is_active" id="trusted-cidr-active-{{ trusted_cidr.id }}" {% if trusted_cidr.is_active %}checked{% endif %}>
+                                <label class="form-check-label small" for="trusted-cidr-active-{{ trusted_cidr.id }}">Active</label>
+                            </div>
+                        </td>
+                        <td>{{ trusted_cidr.created_by.username }}</td>
+                        <td>{{ trusted_cidr.updated_at|date:"Y-m-d H:i" }}</td>
+                        <td class="text-end">
+                            <button form="trusted-cidr-update-{{ trusted_cidr.id }}" type="submit" class="btn btn-outline-primary btn-sm">Save</button>
+                            <form method="POST" action="{% url 'delete_trusted_cidr' trusted_cidr.id %}" class="d-inline" onsubmit="return confirm('Delete trusted CIDR {{ trusted_cidr.cidr_range }}?');">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-outline-danger btn-sm mt-1">Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="6" class="text-muted">No trusted CIDRs configured. Access is currently unrestricted by CIDR.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <hr class="my-4">
         <h5 class="mb-2">Root Token (Admin only)</h5>
         <p class="text-muted mb-3">Copy root token to clipboard. Token value is never rendered in this UI. Every copy action is logged in audit logs.</p>
         <div class="d-flex gap-2 align-items-center">

@@ -140,6 +140,7 @@ from django.contrib import messages
 from django.http import JsonResponse, HttpResponseForbidden
 from django.contrib.auth.models import User
 from django.core.cache import cache
+from django.core.exceptions import ValidationError
 from django.db.models import Q, Count, Avg, Max
 from django.db import transaction
 from django.utils import timezone
@@ -147,6 +148,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 from datetime import datetime, timedelta
 from fnmatch import fnmatch
+from ipaddress import ip_address, ip_network
 import json
 import hashlib
 import re
@@ -175,9 +177,11 @@ from .models import (
     EnvironmentSecretPolicy,
     AnalysisIncident,
     AnalysisSavedQuery,
+    TrustedCIDR,
 )
 from .utils import encrypt_value, decrypt_value
 from .feature_access import FEATURE_CATALOG, FEATURE_DEFAULTS, resolve_user_feature_visibility, user_has_feature
+from .middleware import TrustedCIDRAllowlistMiddleware
 from .analysis import VaultAnalysisOrchestrator, AuditLogNLQueryEngine
 from .analysis.alerting import AlertingRouter
 
@@ -440,8 +444,34 @@ def dashboard(request):
         "can_view_analysis": "analysis" in visible_feature_keys,
         "feature_rows": feature_rows,
         "setting_environments": _manageable_environments_for_settings(request.user).order_by("name"),
+        "trusted_cidrs": TrustedCIDR.objects.select_related("created_by").order_by("cidr_range"),
         "access_policy_sync_token": policy_sync_state["token"],
     })
+
+
+def _cidr_allows_ip(cidr_range, client_ip):
+    try:
+        return ip_address(client_ip) in ip_network(cidr_range, strict=False)
+    except ValueError:
+        return False
+
+
+def _active_cidrs_would_allow_request(client_ip, cidr_ranges):
+    active_ranges = [cidr_range for cidr_range in cidr_ranges if cidr_range]
+    if not active_ranges:
+        return True
+    return any(_cidr_allows_ip(cidr_range, client_ip) for cidr_range in active_ranges)
+
+
+def _reject_lockout_if_needed(request, active_cidr_ranges):
+    client_ip = TrustedCIDRAllowlistMiddleware._get_client_ip(request)
+    if not _active_cidrs_would_allow_request(client_ip, active_cidr_ranges):
+        messages.error(
+            request,
+            "Cannot save trusted CIDR allowlist because it would block your current IP address.",
+        )
+        return True
+    return False
 
 
 # =========================
@@ -1495,6 +1525,116 @@ def save_secret_policy(request):
 
         messages.success(request, f"Secret regex policy applied to {target_envs.count()} environment(s).")
 
+    return redirect("vault_dashboard")
+
+
+@login_required
+@require_POST
+def create_trusted_cidr(request):
+    if not user_has_feature(request.user, "settings"):
+        return HttpResponseForbidden("You do not have settings feature access.")
+    if not request.user.is_superuser:
+        return HttpResponseForbidden("Only admin can manage trusted CIDR allowlists.")
+
+    cidr_range = (request.POST.get("cidr_range") or "").strip()
+    description = (request.POST.get("description") or "").strip()
+    is_active = bool(request.POST.get("is_active"))
+
+    trusted_cidr = TrustedCIDR(
+        cidr_range=cidr_range,
+        description=description,
+        is_active=is_active,
+        created_by=request.user,
+    )
+    try:
+        trusted_cidr.full_clean()
+    except ValidationError as exc:
+        messages.error(request, "; ".join(exc.messages))
+        return redirect("vault_dashboard")
+
+    active_ranges = list(TrustedCIDR.objects.filter(is_active=True).values_list("cidr_range", flat=True))
+    if trusted_cidr.is_active:
+        active_ranges.append(trusted_cidr.cidr_range)
+    if _reject_lockout_if_needed(request, active_ranges):
+        return redirect("vault_dashboard")
+
+    trusted_cidr.save()
+
+    AuditLog.objects.create(
+        user=request.user,
+        action="CREATE",
+        entity="TrustedCIDR",
+        details=f"Created trusted CIDR '{trusted_cidr.cidr_range}'",
+        ip_address=get_client_ip(request),
+    )
+    messages.success(request, f"Trusted CIDR '{trusted_cidr.cidr_range}' created.")
+    return redirect("vault_dashboard")
+
+
+@login_required
+@require_POST
+def update_trusted_cidr(request, cidr_id):
+    if not user_has_feature(request.user, "settings"):
+        return HttpResponseForbidden("You do not have settings feature access.")
+    if not request.user.is_superuser:
+        return HttpResponseForbidden("Only admin can manage trusted CIDR allowlists.")
+
+    trusted_cidr = get_object_or_404(TrustedCIDR, id=cidr_id)
+    trusted_cidr.description = (request.POST.get("description") or "").strip()
+    trusted_cidr.is_active = bool(request.POST.get("is_active"))
+    try:
+        trusted_cidr.full_clean()
+    except ValidationError as exc:
+        messages.error(request, "; ".join(exc.messages))
+        return redirect("vault_dashboard")
+
+    active_ranges = list(
+        TrustedCIDR.objects.filter(is_active=True).exclude(id=trusted_cidr.id).values_list("cidr_range", flat=True)
+    )
+    if trusted_cidr.is_active:
+        active_ranges.append(trusted_cidr.cidr_range)
+    if _reject_lockout_if_needed(request, active_ranges):
+        return redirect("vault_dashboard")
+
+    trusted_cidr.save(update_fields=["description", "is_active", "updated_at"])
+
+    state = "activated" if trusted_cidr.is_active else "deactivated"
+    AuditLog.objects.create(
+        user=request.user,
+        action="UPDATE",
+        entity="TrustedCIDR",
+        details=f"Updated trusted CIDR '{trusted_cidr.cidr_range}' ({state})",
+        ip_address=get_client_ip(request),
+    )
+    messages.success(request, f"Trusted CIDR '{trusted_cidr.cidr_range}' updated.")
+    return redirect("vault_dashboard")
+
+
+@login_required
+@require_POST
+def delete_trusted_cidr(request, cidr_id):
+    if not user_has_feature(request.user, "settings"):
+        return HttpResponseForbidden("You do not have settings feature access.")
+    if not request.user.is_superuser:
+        return HttpResponseForbidden("Only admin can manage trusted CIDR allowlists.")
+
+    trusted_cidr = get_object_or_404(TrustedCIDR, id=cidr_id)
+    cidr_range = trusted_cidr.cidr_range
+    active_ranges = list(
+        TrustedCIDR.objects.filter(is_active=True).exclude(id=trusted_cidr.id).values_list("cidr_range", flat=True)
+    )
+    if _reject_lockout_if_needed(request, active_ranges):
+        return redirect("vault_dashboard")
+
+    trusted_cidr.delete()
+    AuditLog.objects.create(
+        user=request.user,
+        action="DELETE",
+        entity="TrustedCIDR",
+        details=f"Deleted trusted CIDR '{cidr_range}'",
+        ip_address=get_client_ip(request),
+    )
+    messages.success(request, f"Trusted CIDR '{cidr_range}' deleted.")
     return redirect("vault_dashboard")
 
 

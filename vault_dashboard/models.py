@@ -5,6 +5,7 @@ from django.db import models
 from django.contrib.auth.models import User
 from django.utils import timezone
 from django.db.models import JSONField
+from django.core.cache import cache
 import uuid
 
 
@@ -75,6 +76,47 @@ class Secret(models.Model):
 
     def __str__(self):
         return self.name
+
+class TrustedCIDR(models.Model):
+    cidr_range = models.CharField(max_length=43, unique=True)
+    description = models.CharField(max_length=300, blank=True, default="")
+    is_active = models.BooleanField(default=True)
+    created_by = models.ForeignKey(User, on_delete=models.PROTECT, related_name="created_trusted_cidrs")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["cidr_range"]
+        indexes = [
+            models.Index(fields=["is_active"]),
+        ]
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        from ipaddress import ip_network
+
+        try:
+            network = ip_network((self.cidr_range or "").strip(), strict=False)
+        except ValueError as exc:
+            raise ValidationError({"cidr_range": "Enter a valid IPv4 or IPv6 CIDR range."}) from exc
+
+        self.cidr_range = str(network)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        result = super().save(*args, **kwargs)
+        cache.delete("trusted_cidr_allowlist:active_ranges:v1")
+        return result
+
+    def delete(self, *args, **kwargs):
+        result = super().delete(*args, **kwargs)
+        cache.delete("trusted_cidr_allowlist:active_ranges:v1")
+        return result
+
+    def __str__(self):
+        state = "active" if self.is_active else "inactive"
+        return f"{self.cidr_range} ({state})"
+
 
 class SecretPolicy(models.Model):
     MATCH_MODE_CHOICES = [
