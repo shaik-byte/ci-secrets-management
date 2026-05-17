@@ -16,18 +16,50 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
+def _load_env_file(path: Path) -> None:
+    """Load KEY=VALUE pairs from a .env file without overriding real env vars."""
+    if not path.exists():
+        return
+
+    for raw_line in path.read_text().splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if key.startswith("export "):
+            key = key[len("export "):].strip()
+
+        if not key:
+            continue
+
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+
+        os.environ.setdefault(key, value)
+
+
+_load_env_file(BASE_DIR / ".env")
+
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-v84($l$9*xr36q!=7ncq-$krj&)^cntdb)528y^a2j1k4&#6n$'
+SECRET_KEY = (
+    os.getenv("VAULT_SECRET")
+    or os.getenv("SECRET_KEY")
+    or "django-insecure-v84($l$9*xr36q!=7ncq-$krj&)^cntdb)528y^a2j1k4&#6n$"
+)
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
 ALLOWED_HOSTS = []
 
-VAULT_KEK = "dZvKFRmg_ojIQjulhJlFsJzuVILUlRoP0XJ26ATBd_k="
+VAULT_KEK = os.getenv("VAULT_KEK", "dZvKFRmg_ojIQjulhJlFsJzuVILUlRoP0XJ26ATBd_k=")
 
 # Application definition
 

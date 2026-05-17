@@ -129,8 +129,8 @@ pytz>=2024.1
 ## 🔒 Security Notes
 
 - Never commit `venv/` to Git
-- Do not expose SECRET_KEY publicly
-- Use environment variables in production
+- Do not expose `VAULT_SECRET`, `SECRET_KEY`, or `VAULT_KEK` publicly
+- Use environment variables in production; `.env` is intended for local development only
 - Set `DEBUG = False` in production
 - Use PostgreSQL for production deployment
 
@@ -252,10 +252,22 @@ python -m venv .venv
 # 3) Install dependencies
 pip install -r requirements.txt
 
-# 4) Apply migrations
+# 4) Configure vault secrets before starting Django
+# The project automatically reads .env from the repository root.
+# Shell environment variables with the same names take precedence.
+cat > .env <<'EOF'
+VAULT_SECRET='<YOUR_DJANGO_OR_VAULT_SECRET>'
+VAULT_KEK='<YOUR_BASE64_URLSAFE_32_BYTE_KEK>'
+EOF
+
+# Alternatively, export them for only the current shell session:
+export VAULT_SECRET='<YOUR_DJANGO_OR_VAULT_SECRET>'
+export VAULT_KEK='<YOUR_BASE64_URLSAFE_32_BYTE_KEK>'
+
+# 5) Apply migrations
 python manage.py migrate
 
-# 5) Show CLI help
+# 6) Show CLI help
 python cli/vault_agent.py --help
 ```
 
@@ -263,7 +275,7 @@ python cli/vault_agent.py --help
 
 Use one of these as `--root-token`:
 
-1. `VAULT_KEK` value from Django settings (operator token)
+1. `VAULT_KEK` value from your environment or `.env` file (operator token)
 2. Base64 root key token (if you already have the vault root key)
 
 You can authenticate once and save session:
