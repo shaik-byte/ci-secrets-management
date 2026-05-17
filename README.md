@@ -2,6 +2,41 @@
 
 CI-Vault is a Django-based web application designed to manage audit logs, IP tracking, location detection, scheduling tasks, and cryptographic security operations.
 
+
+## 🔑 Run with Vault Environment Variables
+
+Set `VAULT_SECRET` and `VAULT_KEK` before running the project. Choose the command style for your operating system.
+
+### Linux/macOS
+
+```bash
+export VAULT_SECRET='your-django-secret-or-vault-secret'
+export VAULT_KEK='your-base64-url-safe-32-byte-kek'
+
+python manage.py migrate
+python manage.py runserver
+```
+
+### Windows CMD
+
+```bat
+set VAULT_SECRET=your-django-secret-or-vault-secret
+set VAULT_KEK=your-base64-url-safe-32-byte-kek
+
+python manage.py migrate
+python manage.py runserver
+```
+
+### Windows PowerShell
+
+```powershell
+$env:VAULT_SECRET="your-django-secret-or-vault-secret"
+$env:VAULT_KEK="your-base64-url-safe-32-byte-kek"
+
+python manage.py migrate
+python manage.py runserver
+```
+
 ---
 
 ## 🚀 Features
